@@ -1,12 +1,13 @@
 package com.amazonaws.emr.api
 
-import com.amazonaws.auth.{AWSCredentialsProviderChain, DefaultAWSCredentialsProviderChain}
+import com.amazonaws.auth.AWSCredentialsProviderChain
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import com.amazonaws.emr.Config.S3PreSignedUrlValidity
 import org.apache.spark.internal.Logging
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.{GetObjectRequest, PutObjectRequest, S3Exception}
+import software.amazon.awssdk.services.s3.model.{S3Exception, GetObjectRequest, PutObjectRequest}
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 
@@ -23,7 +24,7 @@ object AwsUtils extends Logging {
    * @param objectPath file path on the local filesystem
    */
   def putS3Object(bucketName: String, objectKey: String, objectPath: String): Unit = {
-    val credentialsProvider = ProfileCredentialsProvider.create
+    val credentialsProvider = DefaultCredentialsProvider.create
     val client = S3Client.builder.credentialsProvider(credentialsProvider).build
 
     try {
@@ -43,7 +44,7 @@ object AwsUtils extends Logging {
    * @return pre-signed url string
    */
   def getS3ObjectPreSigned(bucketName: String, objectKey: String, validity: Int = S3PreSignedUrlValidity): String = {
-    val credentialsProvider = ProfileCredentialsProvider.create
+    val credentialsProvider = DefaultCredentialsProvider.create
     try {
       val getOb = GetObjectRequest.builder.bucket(bucketName).key(objectKey).build
       val getPresReq = GetObjectPresignRequest.builder
@@ -63,7 +64,7 @@ object AwsUtils extends Logging {
     val credentialsProviderChain: AWSCredentialsProviderChain = new DefaultAWSCredentialsProviderChain()
     try {
       val awsCredentials = credentialsProviderChain.getCredentials
-      println(s"Found valid AWS credentials: ${awsCredentials.getAWSAccessKeyId}")
+      println(s"Found valid AWS credentials")
       true
     } catch {
       case _: Exception =>

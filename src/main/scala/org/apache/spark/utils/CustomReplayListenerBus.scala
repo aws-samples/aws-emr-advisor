@@ -21,8 +21,8 @@ class CustomReplayListenerBus extends ReplayListenerBus {
       //logDebug(s"Drop incompatible event log: $line")
       case _: JsonParseException =>
       //logWarning(s"Got JsonParseException log: $line")
-      case _: Throwable =>
-      //logWarning(s"Some shit happened: $line")
+      case t: Throwable =>
+      logWarning(s"Ignore error at: $line, ${t.getMessage}")
     }
     true
   }

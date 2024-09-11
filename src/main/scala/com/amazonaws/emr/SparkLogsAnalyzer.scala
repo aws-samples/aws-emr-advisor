@@ -39,7 +39,10 @@ object SparkLogsAnalyzer extends App {
     }
   }
 
-  if (args.length < 1) println(usage)
+  if (args.length < 1) {
+    println(usage)
+    exit(1)
+  }
 
   val options = parseArgs(Map(), args.toList)
   val sparkEventLogFile = options.getOrElse("filename", "")

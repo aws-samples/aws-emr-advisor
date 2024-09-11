@@ -5,14 +5,17 @@ import com.amazonaws.emr.spark.models.AppContext
 import com.github.luben.zstd.ZstdInputStream
 import com.ning.compress.lzf.LZFInputStream
 import net.jpountz.lz4.LZ4BlockInputStream
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.FileStatus
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.utils.SparkHelper
 import org.json4s.DefaultFormats
 import org.xerial.snappy.SnappyInputStream
 
-import java.io.{BufferedInputStream, InputStream}
+import java.io.BufferedInputStream
+import java.io.InputStream
 import java.net.URI
 import org.json4s._
 import org.json4s.native.JsonMethods._
@@ -24,11 +27,13 @@ class EmrSparkLogParser(eventLogPath: String) extends Logging {
   private val listener = new EmrSparkListener()
 
   private val sparkConf = new SparkConf()
+  
+  
   private val hadoopConf = SparkHelper.newConfiguration(sparkConf)
   private val fs = FileSystem.get(new URI(eventLogPath), hadoopConf)
 
   val path = new Path(eventLogPath)
-
+  
   def analyze(appContext: AppContext, options: Map[String, String]): AppContext = {
     AppAnalyzer.start(appContext, options)
     appContext
@@ -38,8 +43,11 @@ class EmrSparkLogParser(eventLogPath: String) extends Logging {
 
     if (fs.getFileStatus(path).isDirectory) {
       logInfo(s"Processing directory ${path.getName}")
-      val files = fs.listStatus(path).filter(_.isFile).sortBy(_.getModificationTime)
-      files.foreach { f =>
+      val files = fs.listStatus(path)
+        .filter(_.isFile)
+        .filter(!_.getPath.getName.contains("appstatus_"))
+
+      sortFilePaths(files).foreach { f =>
         logInfo(s"Processing file ${f.getPath.getName}")
         if (isLocal && isNotCompressed(f.getPath)) replyLocalFileInParallel(f.getPath.toUri.getRawPath)
         else replayFile(f.getPath)
@@ -52,6 +60,21 @@ class EmrSparkLogParser(eventLogPath: String) extends Logging {
     listener.finalUpdate()
   }
 
+  private def sortFilePaths(filePaths: Seq[FileStatus]): Seq[FileStatus] = {
+    val EVENT_LOG_V2_FILE_PATTERN = """^events_(\d+)""".r
+
+    if (EVENT_LOG_V2_FILE_PATTERN.findFirstMatchIn(filePaths.head.getPath.getName).isDefined) {
+      filePaths.sortWith { case (a, b) =>
+        val fileIndexA = EVENT_LOG_V2_FILE_PATTERN.findFirstMatchIn(a.getPath.getName).map(_.group(1)).get.toInt
+        val fileIndexB = EVENT_LOG_V2_FILE_PATTERN.findFirstMatchIn(b.getPath.getName).map(_.group(1)).get.toInt
+        fileIndexA < fileIndexB
+      }
+    }
+    else {
+      filePaths.sortBy(_.getModificationTime)
+    }
+    
+  }
   private def replayFile(path: Path): Unit = {
     val replayBusClass = Class.forName("org.apache.spark.scheduler.ReplayListenerBus")
     val replayBus = replayBusClass.getDeclaredConstructor().newInstance()
@@ -67,7 +90,7 @@ class EmrSparkLogParser(eventLogPath: String) extends Logging {
     try {
       replayMethod.invoke(replayBus, getDecodedInputStream(path), path.getName, boolean2Boolean(false), getFilter _)
     } catch {
-      case x: Exception => logError(s"Failed replaying events from ${path.getName} [${x.getMessage}]")
+      case x: Exception => logError(s"Failed replaying events from ${path.getName} [${x.getMessage}]", x)
     }
   }
 

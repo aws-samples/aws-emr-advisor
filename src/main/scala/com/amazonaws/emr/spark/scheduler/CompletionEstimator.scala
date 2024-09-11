@@ -174,7 +174,7 @@ object CompletionEstimator extends Logging {
   (ac: AppContext,
    executorCount: Int,
    executorsCores: Int,
-   appRealDuration: Long): Long = {
+   appRealDuration: Long): (Long, Long) = {
 
     val appTotalTime = appRealDuration
     val jobGroupsList = JobOverlapHelper.makeJobLists(ac)
@@ -184,7 +184,10 @@ object CompletionEstimator extends Logging {
     val jobTime = JobOverlapHelper.estimatedTimeSpentInJobs(ac)
     val driverTimeJobBased = appTotalTime - jobTime
 
-    jobGroupsList.map(x => estimateJobListWallClockTime(x, executorCount, executorsCores)).sum + driverTimeJobBased
+    (
+      jobGroupsList.map(x => estimateJobListWallClockTime(x, executorCount, executorsCores)).sum + driverTimeJobBased,
+      driverTimeJobBased
+    )
 
   }
 

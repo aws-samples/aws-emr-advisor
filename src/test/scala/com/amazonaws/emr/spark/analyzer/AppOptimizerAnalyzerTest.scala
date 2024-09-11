@@ -20,15 +20,15 @@ class AppOptimizerAnalyzerTest extends AnyFunSuiteLike with TestUtils {
     val fixedExecRealJobTime = JobOverlapHelper.estimatedTimeSpentInJobs(fixedExecAppContext)
     val fixedExecDriverTime = fixedExecAppContext.appInfo.duration - fixedExecRealJobTime
 
-    val simulations = appAnalyzer.estimateRuntime(fixedExecAppContext, 4)
+    val simulations = appAnalyzer.estimateRuntime(fixedExecAppContext, 4, 4)
     val runtime2Executors = simulations(2)
 
     // Opt. number of executors is 2
-    assert(simulations(1) > simulations(2))
+    assert(simulations(1).estimatedAppTimeMs > simulations(2).estimatedAppTimeMs)
     // Verify that adding more executors do not change execution time
     simulations.tail.forall(_._2 == simulations(2))
 
-    val jobTime = runtime2Executors - fixedExecDriverTime
+    val jobTime = runtime2Executors.estimatedAppTimeMs - fixedExecDriverTime
     val jobDuration = Duration(jobTime, TimeUnit.MILLISECONDS)
 
     // This should be 2 minutes processing
@@ -42,24 +42,64 @@ class AppOptimizerAnalyzerTest extends AnyFunSuiteLike with TestUtils {
     val fixedExecRealJobTime = JobOverlapHelper.estimatedTimeSpentInJobs(fixedExecAppContext)
     val fixedExecDriverTime = fixedExecAppContext.appInfo.duration - fixedExecRealJobTime
 
-    val optExecutors4Cores = appAnalyzer.findOptNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 4))
+    val optExecutors4Cores = appAnalyzer.getOptimumTimeNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 4, 4)
+      .map { s =>
+        SimulationWithCores(4, s._1, s._2)
+      }.toSeq, 5.0)
     println(
-      s"Opt. Exec. 4 cores: ${optExecutors4Cores._1} ${printDurationStr(optExecutors4Cores._2 - fixedExecDriverTime)}"
+      s"Opt. Exec. 4 cores: ${optExecutors4Cores.executorNum} ${printDurationStr(optExecutors4Cores.appRuntimeEstimate.estimatedAppTimeMs - fixedExecDriverTime)}" +
+        s" total core seconds: ${optExecutors4Cores.appRuntimeEstimate.estimatedTotalExecCoreMs/1000}"
     )
-    assert(optExecutors4Cores._1 == 2)
+    assert(optExecutors4Cores.executorNum == 2)
 
-    val optExecutors8Cores = appAnalyzer.findOptNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 8))
+    val optExecutors8Cores = appAnalyzer.getOptimumTimeNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 8, 4)
+      .map { s =>
+        SimulationWithCores(4, s._1, s._2)
+      }.toSeq, 5.0)
     println(
-      s"Opt. Exec. 8 cores: ${optExecutors8Cores._1} ${printDurationStr(optExecutors8Cores._2 - fixedExecDriverTime)}"
+      s"Opt. Exec. 8 cores: ${optExecutors8Cores.executorNum} ${printDurationStr(optExecutors8Cores.appRuntimeEstimate.estimatedAppTimeMs - fixedExecDriverTime)}" +
+        s" total core seconds: ${optExecutors8Cores.appRuntimeEstimate.estimatedTotalExecCoreMs/1000}"
     )
-    assert(optExecutors8Cores._1 == 1)
+    assert(optExecutors8Cores.executorNum == 1)
 
-    val optExecutors16Cores = appAnalyzer.findOptNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 16))
+    val optExecutors16Cores = appAnalyzer.getOptimumTimeNumExecutors(appAnalyzer.estimateRuntime(fixedExecAppContext, 16, 4)
+      .map { s =>
+        SimulationWithCores(4, s._1, s._2)
+      }.toSeq, 5.0)
     println(
-      s"Opt. Exec. 16 cores: ${optExecutors16Cores._1} ${printDurationStr(optExecutors16Cores._2 - fixedExecDriverTime)}"
+      s"Opt. Exec. 16 cores: ${optExecutors16Cores.executorNum} ${printDurationStr(optExecutors16Cores.appRuntimeEstimate.estimatedAppTimeMs - fixedExecDriverTime)}" +
+        s" total core seconds: ${optExecutors16Cores.appRuntimeEstimate.estimatedTotalExecCoreMs/1000}"
     )
-    assert(optExecutors16Cores._1 == 1)
+    assert(optExecutors16Cores.executorNum == 1)
 
   }
 
+  test("findOptCostNumExecutors") {
+    val fixedExecRealJobTime = JobOverlapHelper.estimatedTimeSpentInJobs(fixedExecAppContext)
+    val fixedExecDriverTime = fixedExecAppContext.appInfo.duration - fixedExecRealJobTime
+    
+    val coresToResult = Map(
+      2 -> (4, 960),
+      4 -> (2, 960),
+      8 -> (1, 960),
+      16 -> (1, 1920))
+
+    coresToResult.foreach { case (coreNum, result) =>
+
+      val simResult = appAnalyzer.estimateRuntime(fixedExecAppContext, coreNum, 500)
+        .map { a =>
+          SimulationWithCores(coreNum, a._1, a._2)
+        }.toSeq
+      
+      val optExecutorsCores = appAnalyzer.getOptimumCostNumExecutors(simResult, 0.05)
+      println(
+        s"Opt. Exec. ${coreNum} cores: ${optExecutorsCores.executorNum} executor(s)" +
+          s"${printDurationStr(optExecutorsCores.appRuntimeEstimate.estimatedAppTimeMs - fixedExecDriverTime)}, " +
+          s"total core seconds: ${optExecutorsCores.appRuntimeEstimate.estimatedTotalExecCoreMs/1000}"
+      )
+      assert(optExecutorsCores.executorNum == result._1)
+      assert(optExecutorsCores.appRuntimeEstimate.estimatedTotalExecCoreMs/1000 == result._2)
+    }
+  }
+  
 }

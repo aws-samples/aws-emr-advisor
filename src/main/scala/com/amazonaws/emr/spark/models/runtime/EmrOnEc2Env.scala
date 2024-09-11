@@ -44,7 +44,7 @@ case class EmrOnEc2Env(
        |""".stripMargin
 
   override def htmlResources: String = htmlTable(
-    List("Role", "Count", "Instance", "Cpu", "Memory", s"Storage ${htmlTextSmall("**")}"),
+    List("Role", "Count", "Instance", "Cpu per Instance", "Memory", s"Storage ${htmlTextSmall("**")}"),
     List(
       List("master", "1", masterNode.instanceType, s"${masterNode.vCpu}", s"${masterNode.memoryGiB}GB", humanReadableBytes(baseStorage)),
       List("core", s"$coreNodeNum", coreNode.instanceType, s"${coreNode.vCpu}", s"${coreNode.memoryGiB}GB", humanReadableBytes(workerStorage))

@@ -2,8 +2,10 @@ package com.amazonaws.emr.report.spark
 
 import com.amazonaws.emr.Config
 import com.amazonaws.emr.report.HtmlPage
-import com.amazonaws.emr.report.HtmlReport.{htmlBold, htmlBoxNote, htmlExecutorSimulationGraph, htmlGroupList}
+import com.amazonaws.emr.report.HtmlReport.{htmlExecutorSimulationGraph, htmlBoxNote, htmlGroupList, htmlBold}
+import com.amazonaws.emr.spark.analyzer.AppRuntimeEstimate
 import com.amazonaws.emr.spark.models.AppRecommendations
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime
 import com.amazonaws.emr.utils.Constants.SparkConfigurationWarning
 import com.amazonaws.emr.utils.Formatter.printDurationStr
@@ -13,14 +15,14 @@ import scala.concurrent.duration.Duration
 
 class PageSimulations(appRecommendations: AppRecommendations) extends HtmlPage {
 
-  private val sparkConf = appRecommendations.optimalSparkConf.getOrElse(SparkRuntime.empty)
-  private val simulations = appRecommendations.executorSimulations.getOrElse(Map.empty[Int, Long])
-  private val recommended = appRecommendations.optimalSparkConf.getOrElse(SparkRuntime.empty).executorsNum
-  private val estimatedTime = simulations.getOrElse(recommended, 0L)
+  private val sparkConf = appRecommendations.sparkConfs.getOrElse(TimeOpt, SparkRuntime.empty)
+  private val simulations = appRecommendations.executorSimulations.getOrElse(Map.empty[Int, AppRuntimeEstimate])
+  private val recommended = appRecommendations.sparkConfs.getOrElse(TimeOpt, SparkRuntime.empty).executorsNum
+  private val estimatedTime = simulations.getOrElse(recommended, AppRuntimeEstimate.empty).estimatedAppTimeMs
   private val data = simulations.take(recommended + 50)
 
   private val labels = data.keys.toList
-  private val values = data.values.map(Duration(_, TimeUnit.MILLISECONDS).toSeconds.toInt).toList
+  private val values = data.values.map(a => Duration(a.estimatedAppTimeMs, TimeUnit.MILLISECONDS).toSeconds.toInt).toList
 
   private val graph = htmlExecutorSimulationGraph("executor-simulation", recommended, labels, values)
 
