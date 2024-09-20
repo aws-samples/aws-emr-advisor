@@ -41,9 +41,10 @@ case class EmrServerlessEnv(
   )
 
   override def htmlCosts: String = htmlGroupListWithFloat(Seq(
-    (s"""Cores ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.cpu)} $DefaultCurrency"),
-    (s"""Memory ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.memory)} $DefaultCurrency"),
-    (s"""Storage ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.storage)} $DefaultCurrency")
+    (s"""Cores Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.cpu)} $DefaultCurrency"),
+    (s"""Memory Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.memory)} $DefaultCurrency"),
+    (s"""Storage Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.storage)} $DefaultCurrency"),
+    (s"""<B>Total Costs</B> ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.cpu + costs.memory + costs.storage)} $DefaultCurrency")
   ), "list-group-flush mb-2", "px-0")
 
   override def htmlResources: String = htmlTable(
@@ -79,7 +80,7 @@ case class EmrServerlessEnv(
     val executorStorageStr = s"${toGB(executors.storage)}G"
     val classParam = if (sparkCmd.isScala) s"--class ${htmlTextRed(sparkCmd.appMainClass)} " else ""
     val arguments = if (sparkCmd.appArguments.nonEmpty) {
-      s""""\n        entryPointArguments": [${htmlTextRed(sparkCmd.appArguments.mkString("\"", "\",\"", "\""))}],"""
+      s"""\n"entryPointArguments": [${htmlTextRed(sparkCmd.appArguments.mkString("\"", "\",\"", "\""))}],"""
     } else ""
 
     s"""# Specify an IAM role for the job
@@ -94,6 +95,14 @@ case class EmrServerlessEnv(
        |        "entryPoint": "${htmlTextRed(sparkCmd.appScriptJarPath)}",$arguments
        |        "sparkSubmitParameters": "$classParam${conf.sparkMainConfString} --conf spark.emr-serverless.executor.disk=$executorStorageStr"
        |      }
+       |    }' \\
+       |    --configuration-overrides '{
+       |      "applicationConfiguration": [{
+       |      "classification": "spark",
+       |      "properties": {
+       |       "dynamicAllocationOptimization": "true"
+       |      }
+       |     }]
        |    }'
        |""".stripMargin
   }

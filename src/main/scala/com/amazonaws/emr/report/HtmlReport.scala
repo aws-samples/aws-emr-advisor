@@ -3,12 +3,14 @@ package com.amazonaws.emr.report
 import com.amazonaws.emr.api.AwsUtils
 import com.amazonaws.emr.report.spark._
 import com.amazonaws.emr.spark.models.AppContext
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.utils.Constants.ParamBucket
 import com.amazonaws.emr.utils.Formatter.humanReadableBytes
 import org.apache.spark.internal.Logging
 
 import java.io._
-import java.nio.file.{Files, Paths}
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.{Paths, Files}
 
 object HtmlReport extends Logging {
 
@@ -45,7 +47,17 @@ object HtmlReport extends Logging {
    * @param path       location on the local filesystem to store the report
    */
   private def generate(appContext: AppContext, path: String): Unit = {
-    Files.createDirectories(Paths.get(path).getParent.toAbsolutePath)
+    
+    val directoryPath = Paths.get(path).getParent.toAbsolutePath
+    try{
+      Files.createDirectories(directoryPath)
+    } catch {
+
+      case _: FileAlreadyExistsException =>
+        logInfo(s"Directory already exists: $directoryPath")
+      
+    }
+    
     val pw = new PrintWriter(new File(path))
     createHtmlReport(appContext, pw)
     pw.close()
@@ -90,7 +102,7 @@ object HtmlReport extends Logging {
        |  <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet" crossorigin="anonymous">
        |  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
        |  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4" crossorigin="anonymous"></script>
-       |  <title>EMR Insights / $title</title>
+       |  <title>EMR Advisor / $title</title>
        |  <style>
        |    h2 { margin-top: 1em;}
        |
@@ -178,7 +190,13 @@ object HtmlReport extends Logging {
        |    <button class="nav-link link-dark px-2" id="pills-metrics-tab" data-bs-toggle="pill" data-bs-target="#pills-metrics" type="button" role="tab" aria-controls="pills-metrics" aria-selected="false">Metrics</button>
        |  </li>
        |  <li class="nav-item" role="presentation">
-       |    <button class="nav-link link-dark px-2" id="pills-recommendations-tab" data-bs-toggle="pill" data-bs-target="#pills-recommendations" type="button" role="tab" aria-controls="pills-recommendations" aria-selected="false">Recommendations</button>
+       |    <button class="nav-link link-dark px-2" id="pills-timeoptrecommendations-tab" data-bs-toggle="pill" data-bs-target="#pills-timeoptrecommendations" type="button" role="tab" aria-controls="pills-timeoptrecommendations" aria-selected="false">Recommendations(runtime)</button>
+       |  </li>
+       |  <li class="nav-item" role="presentation">
+       |    <button class="nav-link link-dark px-2" id="pills-costoptrecommendations-tab" data-bs-toggle="pill" data-bs-target="#pills-costoptrecommendations" type="button" role="tab" aria-controls="pills-costoptrecommendations" aria-selected="false">Recommendations(cost)</button>
+       |  </li>
+       |  <li class="nav-item" role="presentation">
+       |    <button class="nav-link link-dark px-2" id="pills-timecappedrecommendations-tab" data-bs-toggle="pill" data-bs-target="#pills-timecappedrecommendations" type="button" role="tab" aria-controls="pills-timecappedrecommendations" aria-selected="false">Recommendations(runtime capped)</button>
        |  </li>
        |  <li class="nav-item" role="presentation">
        |    <button class="nav-link link-dark px-2" id="pills-simulations-tab" data-bs-toggle="pill" data-bs-target="#pills-simulations" type="button" role="tab" aria-controls="pills-simulations" aria-selected="false">Simulations</button>
@@ -199,7 +217,9 @@ object HtmlReport extends Logging {
     val summary = new PageSummary(appContext.appInfo, appContext.appConfigs)
     val configs = new PageConfigs(appContext.appConfigs)
     val metrics = new PageMetrics(appContext.appMetrics, appContext.jobMap, appContext.appSparkExecutors, appContext.appEfficiency)
-    val recommendations = new PageRecommendations(appContext.appInfo, appContext.appRecommendations)
+    val timeOptRec = new PageRecommendations(TimeOpt, appContext.appInfo, appContext.appRecommendations)
+    val costOptRec = new PageRecommendations(CostOpt, appContext.appInfo, appContext.appRecommendations)
+    val timeCappedRec = new PageRecommendations(TimeCapped, appContext.appInfo, appContext.appRecommendations)
     val simulations = new PageSimulations(appContext.appRecommendations)
 
     s"""
@@ -216,7 +236,9 @@ object HtmlReport extends Logging {
        |  ${htmlPage("metrics", isActive = false, content = metrics.render)}
        |
        |  <!-- Page Recommendations -->
-       |  ${htmlPage("recommendations", isActive = false, content = recommendations.render)}
+       |  ${htmlPage("timeoptrecommendations", isActive = false, content = timeOptRec.render)}
+       |  ${htmlPage("costoptrecommendations", isActive = false, content = costOptRec.render)}
+       |  ${htmlPage("timecappedrecommendations", isActive = false, content = timeCappedRec.render)}
        |
        |  <!-- Page Simulations -->
        |  ${htmlPage("simulations", isActive = false, content = simulations.render)}

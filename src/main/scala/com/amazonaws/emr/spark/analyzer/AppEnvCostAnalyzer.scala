@@ -1,16 +1,17 @@
 package com.amazonaws.emr.spark.analyzer
 
-import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, ComputeType, EmrInstance}
-import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, roundUp, toGB, toMB}
+import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, EmrInstance, ComputeType}
+import com.amazonaws.emr.utils.Formatter.{toGB, toMB, humanReadableBytes, roundUp, byteStringAsBytes}
 import com.amazonaws.emr.Config._
-import com.amazonaws.emr.api.{AwsCosts, AwsPricing}
-import com.amazonaws.emr.spark.models.runtime.{ContainerRequest, EmrEnvironment, EmrOnEc2Env, EmrOnEksEnv, EmrServerlessEnv, Environment, ResourceRequest, SparkRuntime}
+import com.amazonaws.emr.api.{AwsPricing, AwsCosts}
+import com.amazonaws.emr.spark.models.runtime.{Environment, EmrOnEksEnv, EmrServerlessEnv, EmrEnvironment, EmrOnEc2Env, SparkRuntime, ResourceRequest, ContainerRequest}
 import com.amazonaws.emr.api.AwsCosts.{EmrCosts, EmrOnEc2Cost, EmrOnEksCost}
 import com.amazonaws.emr.spark.models.runtime.EmrServerlessEnv.findWorkerByCpuMemory
 import com.amazonaws.emr.spark.models.runtime.Environment._
 import com.amazonaws.emr.spark.models.AppContext
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime.getMemoryWithOverhead
-import com.amazonaws.emr.utils.Constants.{ParamRegion, ParamSpot}
+import com.amazonaws.emr.utils.Constants.{ParamSpot, ParamRegion}
 import org.apache.spark.internal.Logging
 
 class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
@@ -41,19 +42,29 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
       .head
       .price
 
-    val sparkConf = appContext.appRecommendations.optimalSparkConf.getOrElse(SparkRuntime.empty)
-    val driverReq = ContainerRequest(1, sparkConf.driverCores, sparkConf.driverMemory, 0L)
-    val executorReq = ContainerRequest(
-      sparkConf.executorsNum,
-      sparkConf.executorCores,
-      sparkConf.executorMemory,
-      sparkConf.executorStorageRequired
-    )
+    Seq(TimeOpt, CostOpt, TimeCapped).foreach{
+      findOptimizedEnvForAllDeployment
+    }
+    
+    def findOptimizedEnvForAllDeployment(optimalType: OptimalType): Unit = {
+      val sparkConf = appContext.appRecommendations.sparkConfs.getOrElse(optimalType, SparkRuntime.empty)
+      val driverReq = ContainerRequest(1, sparkConf.driverCores, sparkConf.driverMemory, 0L)
+      val executorReq = ContainerRequest(
+        sparkConf.executorsNum,
+        sparkConf.executorCores,
+        sparkConf.executorMemory,
+        sparkConf.executorStorageRequired
+      )
 
-    appContext.appRecommendations.emrOnEc2Environment = findOptEnv(allInstances, sparkConf, driverReq, executorReq, EC2)
-    appContext.appRecommendations.emrOnEksEnvironment = findOptEnv(allInstances, sparkConf, driverReq, executorReq, EKS)
-    appContext.appRecommendations.emrServerlessEnvironment = findEmrServerlessOptimal(sparkConf)
+      findOptEnv(allInstances, sparkConf, driverReq, executorReq, EC2)
+        .map(appContext.appRecommendations.emrOnEc2Envs.put(optimalType, _))
+      findOptEnv(allInstances, sparkConf, driverReq, executorReq, EKS)
+        .map(appContext.appRecommendations.emrOnEksEnvs.put(optimalType, _))
+      findEmrServerlessOptimal(sparkConf)
+        .map(appContext.appRecommendations.emrServerlessEnvs.put(optimalType, _))
+    }
 
+    
     // ========================================================================
     // EMR EC2 / EKS
     // ========================================================================
@@ -62,7 +73,7 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
       runtimeConfig: SparkRuntime,
       request: ResourceRequest,
       ebsGbPerMonthCost: Double,
-      deployment: Environment.name
+      deployment: name
     ): InstanceTest = {
 
       val runtimeHrs = deployment match {
@@ -108,14 +119,14 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
       sparkRuntimeConfigs: SparkRuntime,
       driver: ResourceRequest,
       executors: ResourceRequest,
-      deployment: Environment.name
+      deployment: name
     ): Option[EmrEnvironment] = {
 
       // evaluate instances for spark executors
       val workerNodes = {
         deployment match {
           case EC2 =>
-            println(s"Compute EC2 Exec - ${executors}")
+            logInfo(s"Compute EC2 Exec - ${executors}")
             filterSparkInstances(instances, executors)
               .map(i => evaluate(i, sparkRuntimeConfigs, executors, ebsGbPerMonthCost, EC2))
               .filter(_.containersPerInstance >= 1)
@@ -123,7 +134,7 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
               .filter(_.containersPerInstance <= EmrOnEc2MaxContainersPerInstance)
 
           case EKS =>
-            println(s"Compute EKS Exec - ${executors}")
+            logInfo(s"Compute EKS Exec - ${executors}")
             filterSparkInstances(instances, executors)
               .map(i => evaluate(i, sparkRuntimeConfigs, executors, ebsGbPerMonthCost, Environment.EKS))
               .filter(_.containersPerInstance >= 1)
@@ -141,13 +152,13 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
       val driverNodeTmp = {
         deployment match {
           case EC2 =>
-            println(s"Compute EC2 Driver - ${driver}")
+            logInfo(s"Compute EC2 Driver - ${driver}")
             filterSparkInstances(instances, driver)
               .filter(_.instanceFamily.contains(workersInstanceGen))
               .map(i => evaluate(i, sparkRuntimeConfigs, driver, ebsGbPerMonthCost, EC2))
               .filter(_.containersPerInstance >= 1)
           case EKS =>
-            println(s"Compute EKS Driver - ${driver}")
+            logInfo(s"Compute EKS Driver - ${driver}")
             filterSparkInstances(instances, driver)
               .filter(_.instanceFamily.contains(workersInstanceGen))
               .map(i => evaluate(i, sparkRuntimeConfigs, driver, ebsGbPerMonthCost, Environment.EKS))
@@ -228,7 +239,7 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
 
       val totalCostsArm = AwsCosts.computeEmrServerlessCosts(runtimeHrs, ArchitectureType.ARM64, totalCores, toGB(totalMemory), toGB(billableStorage), awsRegion)
       val totalCostsX86 = AwsCosts.computeEmrServerlessCosts(runtimeHrs, ArchitectureType.X86_64, totalCores, toGB(totalMemory), toGB(billableStorage), awsRegion)
-
+      
       if (totalCostsArm.total <= totalCostsX86.total)
         Some(EmrServerlessEnv(
           totalCores,
@@ -264,7 +275,6 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
     }
 
   }
-
   private def filterSparkInstances(instances: List[EmrInstance], request: ResourceRequest): List[EmrInstance] = {
     instances
       .filter(_.currentGeneration == true)

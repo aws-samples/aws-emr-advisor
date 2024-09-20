@@ -49,7 +49,7 @@ case class EmrOnEksEnv(
   )
 
   override def htmlResources: String = htmlTable(
-    List("Role", "Count", "Instance", "Cpu", "Memory", s"Storage ${htmlTextSmall("**")}"),
+    List("Role", "Count", "Instance", "Cpu per Instance", "Memory", s"Storage ${htmlTextSmall("**")}"),
     List(
       List("driver", "1",
         driverInstance.instanceType,

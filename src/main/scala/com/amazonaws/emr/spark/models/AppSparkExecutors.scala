@@ -7,7 +7,7 @@ import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes}
 
 import scala.util.Try
 
-class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], appConfigs: AppConfigs) {
+class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], val appConfigs: AppConfigs) {
 
   val defaultDriverCores: Int = appConfigs.driverCores
   val defaultDriverMemory: Long = appConfigs.driverMemory
@@ -112,8 +112,8 @@ class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], appConfigs
     // sort all start and end times on basis of timing
     // exclude the driver from the computation
     val sorted = getOnlyExecutors.values
+      .filter(t => t.startTime != 0)
       .flatMap(timeSpan => Seq[(Long, Long)]((timeSpan.startTime, 1L), (timeSpan.endTime, -1L)))
-      .filter(_._1 != 0)
       .toArray
       .sortWith((t1: (Long, Long), t2: (Long, Long)) => {
         // for same time entry, we add them first, and then remove

@@ -61,7 +61,7 @@ class PageMetrics(
     val runtimeTable = htmlTable(
       List("Name", "Runtime", "Percentage"),
       List(
-        List("Driver", printDuration(appEfficiency.driverTime), f"""${appEfficiency.driverTimePercentage}%3.2f%%"""),
+        List("Driver Only", printDuration(appEfficiency.driverTime), f"""${appEfficiency.driverTimePercentage}%3.2f%%"""),
         List("Executor", printDuration(appEfficiency.executorsTime), f"""${appEfficiency.executorsTimePercentage}%3.2f%%"""),
         List("Total", printDuration(appEfficiency.appTotalTime), "")
       ), CssTableStyle)
@@ -132,8 +132,11 @@ class PageMetrics(
     val data = appSparkExecutors.executors.toSeq.sortBy(x => Try(x._2.executorID.toInt).getOrElse(0)).map { x =>
 
       // time
-      val activeDuration = x._2.endTime - x._2.startTime
-      val launchDuration = x._2.startTime - x._2.executorInfo.requestTime.getOrElse(x._2.startTime)
+      val adjustedStartTime = if(x._2.startTime > 0) x._2.startTime else x._2.endTime 
+      val adjustedStartTimeString = if(x._2.startTime > 0) printTime(adjustedStartTime) else "N/A"
+      val adjustedStartDateString = if(x._2.startTime > 0) printDate(adjustedStartTime) else ""
+      val activeDuration = x._2.endTime - adjustedStartTime
+      val launchDuration = adjustedStartTime - x._2.executorInfo.requestTime.getOrElse(adjustedStartTime)
       // memory
       val peakJvmMemoryOnHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMHeapMemory)
       val peakJvmMemoryOffHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMOffHeapMemory)
@@ -141,7 +144,7 @@ class PageMetrics(
       List(
         x._2.executorID,
         x._2.hostID,
-        s"""<div class="">${printTime(x._2.startTime)}</div><div class="fw-light">${printDate(x._2.startTime)}</div>""",
+        s"""<div class="">${adjustedStartTimeString}</div><div class="fw-light">${adjustedStartDateString}</div>""",
         s"""<div class="">${printTime(x._2.endTime)}</div><div class="fw-light">${printDate(x._2.endTime)}</div>""",
         printDuration(launchDuration),
         printDuration(activeDuration),

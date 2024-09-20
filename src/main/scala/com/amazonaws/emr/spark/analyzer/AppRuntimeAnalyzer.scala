@@ -72,7 +72,12 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
     // Parse Submitted application
     val cmd = appContext.appConfigs.systemConfigs.get("sun.java.command")
     if (cmd.nonEmpty) {
-      appContext.appInfo.sparkCmd = Some(parseSparkCmd(cmd.get))
+      
+      // quick fix for when lakeformation.enabled parameter is not correct in Java command
+      val cmdStr=cmd.get.replace("spark.emr-serverless.lakeformation.enabled=",
+                    "spark.emr-serverless.lakeformation.enabled=false")  
+      
+      appContext.appInfo.sparkCmd = Some(parseSparkCmd(cmdStr))
     }
   }
 

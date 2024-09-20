@@ -1,19 +1,36 @@
 package com.amazonaws.emr.spark.analyzer
 
 import com.amazonaws.emr.Config
-import com.amazonaws.emr.Config.{SparkMaxDriverCores, SparkMaxDriverMemory}
+import com.amazonaws.emr.Config.SparkMaxDriverCores
+import com.amazonaws.emr.Config.SparkMaxDriverMemory
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics
 import com.amazonaws.emr.spark.models.AppContext
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime
 import com.amazonaws.emr.spark.scheduler.CompletionEstimator
-import com.amazonaws.emr.utils.Constants.{ParamDuration, ParamExecutors}
-import com.amazonaws.emr.utils.Formatter.{asGB, byteStringAsBytes, humanReadableBytes, printDuration, roundUp}
+import com.amazonaws.emr.utils.Constants.ParamDuration
+import com.amazonaws.emr.utils.Constants.ParamExecutors
+import com.amazonaws.emr.utils.Formatter.asGB
+import com.amazonaws.emr.utils.Formatter.byteStringAsBytes
+import com.amazonaws.emr.utils.Formatter.humanReadableBytes
+import com.amazonaws.emr.utils.Formatter.roundUp
 import org.apache.spark.internal.Logging
 
-import scala.collection.{SortedMap, mutable}
+import scala.collection.SortedMap
+import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.util.Try
 
+case class AppRuntimeEstimate(estimatedAppTimeMs: Long,
+                              estimatedTotalExecCoreMs: Long
+                             )
+case class SimulationWithCores(coresPerExecutor: Int,
+                               executorNum: Int,
+                               appRuntimeEstimate: AppRuntimeEstimate
+                                   )
+object AppRuntimeEstimate{
+  val empty: AppRuntimeEstimate = AppRuntimeEstimate(0L, 0L)
+}
 class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
 
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
@@ -30,50 +47,146 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
       appContext.appSparkExecutors.defaultExecutorCores,
       appContext.appSparkExecutors.defaultExecutorMemory,
       appContext.appSparkExecutors.getRequiredStoragePerExecutor,
-      appContext.appSparkExecutors.executorsMaxRunning
-    )
+      appContext.appSparkExecutors.executorsMaxRunning)
     appContext.appRecommendations.currentSparkConf = Some(currentConf)
 
-    // ========================================================================
-    // Compute recommended configurations
-    // ========================================================================
-    val optExecutorCores = findOptimalExecutorCores(appContext)
-    val optExecutorMemoryBytes = findOptExecutorMemory(appContext, optExecutorCores)
-
     val maxExecutors: Int = Try(options(ParamExecutors.name).toInt).getOrElse(Config.ExecutorsMaxTestsCount)
-    val expectedDuration: Long = Try(Duration(options(ParamDuration.name)).toMillis).getOrElse(Long.MaxValue)
+    val expectedDuration: Option[Long] = Try(Duration(options(ParamDuration.name)).toMillis).toOption
 
-    val simulations = estimateRuntime(appContext, optExecutorCores, maxExecutors)
-    val (optExecutorsNum, estimatedRuntime) = findOptNumExecutorsByTime(simulations, expectedDuration)
+    val coresList = getOptimalCoresPerExecutor(appContext)
+
+    if (coresList.isEmpty) {
+      throw new RuntimeException("coresList is empty.")
+    }
+
+    val simulationList = coresList.flatMap { coreNum =>
+      val simulations = estimateRuntime(appContext, coreNum, maxExecutors)
+      simulations.map { s =>
+        SimulationWithCores(coreNum, s._1, s._2)
+      }
+    }
+    
+    // ========================================================================
+    // Compute time optimized recommended configurations
+    // ========================================================================
+    val  timeOptimalSparkConf = getTimeOptimalSparkConf (
+      appContext,
+      simulationList
+    )
+
+    timeOptimalSparkConf.foreach { c =>
+      appContext.appRecommendations.sparkConfs.put(TimeOpt, c)
+      
+      val simulationPageData = simulationList
+                          .filter ( _.coresPerExecutor == c.executorCores)
+                          .map( s=> s.executorNum -> s.appRuntimeEstimate)
+      
+      appContext.appRecommendations.executorSimulations = Some(scala.collection.immutable.TreeMap(simulationPageData:_*))
+    }
+    logInfo("--------------------------runtime optimized------------------------------------------------")
+    logInfo(s"${appContext.appRecommendations.sparkConfs.get(TimeOpt)}")
+    
+
+    // ========================================================================
+    // Compute cost optimized recommended configurations
+    // ========================================================================
+    getCostOptimalSparkConf(
+      appContext,
+      simulationList,
+      None
+    ).foreach (appContext.appRecommendations.sparkConfs.put(CostOpt, _))
+    
+    logInfo("--------------------------cost optimized------------------------------------------------")
+    logInfo(s"${appContext.appRecommendations.sparkConfs.get(CostOpt)}")
+
+
+    // ========================================================================
+    // Compute time capped configurations
+    // ========================================================================
+    val cappedExecutionTime = expectedDuration.orElse(autoAssignExpectedDuration(appContext.appInfo.duration))
+    getCostOptimalSparkConf(appContext,
+      simulationList,
+      cappedExecutionTime
+    ).foreach { c =>
+      appContext.appRecommendations.sparkConfs.put(TimeCapped, c)
+      cappedExecutionTime.map( t =>
+        appContext.appRecommendations.additionalInfo.getOrElseUpdate(TimeCapped, mutable.HashMap()) += (ParamDuration.name -> t.toString)
+      )
+    }
+    logInfo("--------------------------time capped------------------------------------------------")
+    logInfo(s"${appContext.appRecommendations.sparkConfs.get(TimeCapped)}")
+  }
+
+  private def getTimeOptimalSparkConf(
+                                        appContext: AppContext,
+                                        simulationList: Seq[SimulationWithCores]
+                                     ): Option[SparkRuntime] = {
+
+    val maxDrop: Double = Config.ExecutorsMaxDropLoss
+    val SimulationWithCores(optExecutorCores, optExecutorsNum, optEstimatedRuntime) =
+      findOptNumExecutorsByTime(simulationList, maxDrop)
+
+    val optExecutorMemoryBytes = findOptExecutorMemory(appContext, optExecutorCores)
     val optExecutorStorageBytes = findOptExecutorStorage(appContext, optExecutorsNum)
 
-    val optDriverCores = findOptDriverCores(appContext, optExecutorsNum)
-    val optDriverMemoryBytes = findOptDriverMemory(appContext)
+    val optCostDriverCores = findOptDriverCores(appContext, optExecutorsNum)
+    val optCostDriverMemoryBytes = findOptDriverMemory(appContext)
 
-    appContext.appRecommendations.executorSimulations = Some(simulations)
-    appContext.appRecommendations.optimalSparkConf = Some(
+    logDebug(s"Est. Executor app runtime: ${optEstimatedRuntime})")
+
+    Some(
       SparkRuntime(
-        estimatedRuntime,
-        optDriverCores,
-        optDriverMemoryBytes,
+        optEstimatedRuntime.estimatedAppTimeMs,
+        optCostDriverCores,
+        optCostDriverMemoryBytes,
         optExecutorCores,
         optExecutorMemoryBytes,
         optExecutorStorageBytes,
         optExecutorsNum
       ))
 
-    logDebug("--------------------------------------------------------------------------")
-    logDebug(s" - Est. Driver Cores: $optDriverCores (${currentConf.driverCores})")
-    logDebug(s" - Est. Driver Memory: ${humanReadableBytes(optDriverMemoryBytes)} (${humanReadableBytes(currentConf.driverMemory)})")
-    logDebug(s" - Est. Executor Cores: $optExecutorCores (${currentConf.executorCores})")
-    logDebug(s" - Est. Executor Memory: ${humanReadableBytes(optExecutorMemoryBytes)} (${humanReadableBytes(currentConf.executorMemory)})")
-    logDebug(s" - Est. Executor Storage: ${humanReadableBytes(optExecutorStorageBytes)} (${humanReadableBytes(currentConf.executorStorageRequired)})")
-    logDebug(s" - Est. Executor Number: $optExecutorsNum (${currentConf.executorsNum})")
-    logDebug(s" - Est. Application Runtime: ${printDuration(estimatedRuntime)} (${printDuration(currentConf.runtime)})")
-    logDebug("--------------------------------------------------------------------------")
-
+  }
+  
+  // TODO: find this a better algorithm
+  private def autoAssignExpectedDuration(x: Long): Option[Long] = {
+    Some(x)
   }
 
+  private def getCostOptimalSparkConf(
+                                       appContext: AppContext,
+                                       simulationList: Seq[SimulationWithCores],
+                                       expectedDuration: Option[Long]
+                                     ): Option[SparkRuntime] = {
+
+    val maxCostRange: Double = Config.ExecutorsMaxCostRange
+
+    val SimulationWithCores(optCostExecutorCores, optCostExecutorsNum, optCostEstimatedRuntime) =
+      findOptNumExecutorsByCost(
+        simulationList,
+        expectedDuration,
+        maxCostRange
+      )
+
+    val optCostExecutorMemoryBytes = findOptExecutorMemory(appContext, optCostExecutorCores)
+    val optCostExecutorStorageBytes = findOptExecutorStorage(appContext, optCostExecutorsNum)
+
+    val optCostDriverCores = findOptDriverCores(appContext, optCostExecutorsNum)
+    val optCostDriverMemoryBytes = findOptDriverMemory(appContext)
+    
+    logDebug(s"Est. Executor app runtime: ${optCostEstimatedRuntime})")
+    
+    Some(
+      SparkRuntime(
+        optCostEstimatedRuntime.estimatedAppTimeMs,
+        optCostDriverCores,
+        optCostDriverMemoryBytes,
+        optCostExecutorCores,
+        optCostExecutorMemoryBytes,
+        optCostExecutorStorageBytes,
+        optCostExecutorsNum
+      ))
+    
+  }
 
   /**
    * Estimate the driver cores, using the number of executors and evaluating
@@ -109,6 +222,15 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
     else if (maxTaskMemory >= byteStringAsBytes("1g")) 4
     else if (maxTaskMemory >= byteStringAsBytes("500m")) 8
     else 16
+  }
+
+  def getOptimalCoresPerExecutor(appContext: AppContext): Seq[Int] = {
+    val maxTaskMemory = appContext.appSparkExecutors.getMaxTaskMemoryUsed
+    if (maxTaskMemory >= byteStringAsBytes("16g")) Seq(1)
+    else if (maxTaskMemory >= byteStringAsBytes("8g")) Seq(1, 2)
+    else if (maxTaskMemory >= byteStringAsBytes("4g")) Seq(2, 4)
+    else if (maxTaskMemory >= byteStringAsBytes("2g")) Seq(2, 4, 8)
+    else Seq(4, 8, 16)
   }
 
   /**
@@ -190,57 +312,89 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
     val roundedStorageGb = roundUp(totalStorageGb)
     byteStringAsBytes(s"${roundedStorageGb}gb")
   }
-
+  
   /**
    * Estimate application runtime using different executors counts.
    *
    * @param appContext       Spark application data
    * @param coresPerExecutor Number of executors cores
    */
-  def estimateRuntime
-  (appContext: AppContext,
+  def estimateRuntime(appContext: AppContext,
     coresPerExecutor: Int,
-    maxExecutors: Int = Config.ExecutorsMaxTestsCount): SortedMap[Int, Long] = {
+    maxExecutors: Int): SortedMap[Int, AppRuntimeEstimate] = {
+    
     val appRealTime = appContext.appInfo.duration
-    val executorsTests = List.range(1, maxExecutors).par
+    
+    // TODO: use BO experiments to support large maxExecutors
+    val executorsTests = List.range(1, maxExecutors + 1).par
 
     val simulations = executorsTests
       .map { executorsCount =>
-        val estimatedAppTime = CompletionEstimator.estimateAppWallClockTimeWithJobLists(
+        val (estimatedAppTime, driverTime) = CompletionEstimator.estimateAppWallClockTimeWithJobLists(
           appContext,
           executorsCount,
           coresPerExecutor,
           appRealTime
         )
-        executorsCount -> estimatedAppTime
+        val estimatedTotalCoreSeconds = (estimatedAppTime - driverTime) * executorsCount * coresPerExecutor;
+        executorsCount -> AppRuntimeEstimate(estimatedAppTime, estimatedTotalCoreSeconds)
       }
       .seq
       .sortBy(_._1)
       .toMap
 
-    SortedMap[Int, Long]() ++ simulations
+    SortedMap[Int, AppRuntimeEstimate]() ++ simulations
   }
 
   /**
-   * Compute the number of executors using a custom distance function
+   * Compute the number of executors for optimized cost
+   *
+   * @param data    containing executors count and estimated application time
+   * @param maxRange Max time range for filtering the qualified estimate
+   */
+  def getOptimumCostNumExecutors(data: Seq[SimulationWithCores],
+                                 maxRange: Double): SimulationWithCores = {
+    val minTotalExecMs = data
+      .minBy(_.appRuntimeEstimate.estimatedTotalExecCoreMs)
+      .appRuntimeEstimate
+      .estimatedTotalExecCoreMs
+    
+    data
+      .filter(
+          _.appRuntimeEstimate.estimatedTotalExecCoreMs <= minTotalExecMs * (1 + maxRange)
+      )
+      .minBy(_.appRuntimeEstimate.estimatedAppTimeMs)
+  }
+
+  /**
+   * Compute the number of executors for optimized application time using a custom distance function
    *
    * @param data    SortedMap[Int, Long] containing executors count and estimated application time
    * @param maxDrop Max time reduction in percentage to determine when we stop
    */
-  def findOptNumExecutors(data: SortedMap[Int, Long], maxDrop: Double = Config.ExecutorsMaxDropLoss): (Int, Long) = {
+    
+  def getOptimumTimeNumExecutors(data: Seq[SimulationWithCores],
+                                 maxDrop: Double): SimulationWithCores = {
+    
+    val sortedData = data.sortBy(_.executorNum)
 
-    val distance = mutable.SortedMap.empty[Int, Float]
-    for (x <- 1 until data.size) {
-      val y1 = data.getOrElse(x, 0L).toFloat
-      val y2 = data.getOrElse(x + 1, 0L).toFloat
+    val dropRatios = mutable.SortedMap.empty[Int, Float]
+    for (x <- 1 until sortedData.size) {
+      val y1 = sortedData(x - 1).appRuntimeEstimate.estimatedAppTimeMs
+      val y2 = sortedData(x).appRuntimeEstimate.estimatedAppTimeMs
+
       // compute drop percentage
-      distance(x) = (y1 - y2) * 100 / y1
+      dropRatios(x) = (y1 - y2).toFloat * 100 / y2.toFloat 
+
     }
 
-    Try {
-      val minExec = distance.filter(x => x._2 >= maxDrop).maxBy(_._1)
-      data.find(_._1 == (minExec._1 + 1)).getOrElse(data.head)
-    }.getOrElse(data.head)
+    sortedData(
+      dropRatios
+        .filter(_._2 >= maxDrop)
+        .lastOption
+        .map(_._1)
+        .getOrElse(0)
+    )
   }
 
   /**
@@ -251,14 +405,27 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
    * @param expectedTime Expected time in milliseconds
    * @param maxDrop      Max time reduction in percentage to determine when we stop
    */
-  def findOptNumExecutorsByTime
-  (data: SortedMap[Int, Long],
-    expectedTime: Long,
-    maxDrop: Double = Config.ExecutorsMaxDropLoss): (Int, Long) = {
+  def findOptNumExecutorsByTime(data: Seq[(SimulationWithCores)],
+   maxDrop: Double): SimulationWithCores = {
+    
+    data
+      .groupBy(_.coresPerExecutor)
+      .map( d => getOptimumTimeNumExecutors(d._2, maxDrop))
+      .minBy(_.appRuntimeEstimate.estimatedAppTimeMs)
+  }
 
-    val filtered = data.filter(_._2 >= expectedTime)
-    if (filtered.nonEmpty) filtered.last
-    else findOptNumExecutors(data, maxDrop)
+  def findOptNumExecutorsByCost(data: Seq[(SimulationWithCores)],
+   expectedTime: Option[Long],
+   maxRange: Double
+  ): SimulationWithCores = {
+    expectedTime.map { t =>
+      val filtered = data.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t)
+      if (filtered.nonEmpty) getOptimumCostNumExecutors(filtered, maxRange)
+      else getOptimumCostNumExecutors(data, maxRange)
+    }.getOrElse {
+      getOptimumCostNumExecutors(data, maxRange)
+    }
+
   }
 
 }

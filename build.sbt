@@ -1,4 +1,4 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := "0.2.0-SNAPSHOT"
 ThisBuild / organization := "com.amazonaws.emr"
 ThisBuild / scalaVersion := "2.12.15"
 
@@ -17,17 +17,20 @@ val hadoopVersion = "3.3.2"
 val sparkVersion = "3.4.1"
 val scalaTestsVersion = "3.2.17"
 
+val LibScope = "provided"
+//val LibScope = "compile" // compile is used for local test
+
 libraryDependencies ++= Seq(
 
-  "org.apache.httpcomponents" % "httpmime" % "4.5.13" % "provided",
-  "org.apache.httpcomponents" % "httpclient" % "4.5.13" % "provided",
+  "org.apache.httpcomponents" % "httpmime" % "4.5.13" % LibScope,
+  "org.apache.httpcomponents" % "httpclient" % "4.5.13" % LibScope,
 
   // Spark / Hadoop
   "org.apache.hadoop" % "hadoop-aws" % hadoopVersion,
-  "org.apache.hadoop" % "hadoop-client" % hadoopVersion % "provided",
-  "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
-  "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided",
-  "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
+  "org.apache.hadoop" % "hadoop-client" % hadoopVersion % LibScope,
+  "org.apache.spark" %% "spark-core" % sparkVersion % LibScope,
+  "org.apache.spark" %% "spark-mllib" % sparkVersion % LibScope,
+  "org.apache.spark" %% "spark-sql" % sparkVersion % LibScope,
 
   // AWS Services
   "software.amazon.awssdk" % "emr" % awsSdkVersion,
@@ -40,7 +43,7 @@ libraryDependencies ++= Seq(
   "org.json4s" %% "json4s-jackson" % json4sVersion,
 
   // Scala Tests
-  "org.scalactic" %% "scalactic" % scalaTestsVersion,
+  "org.scalactic" %% "scalactic" % scalaTestsVersion % "test",
   "org.scalatest" %% "scalatest" % scalaTestsVersion % "test"
 )
 

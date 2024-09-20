@@ -4,42 +4,67 @@ import com.amazonaws.emr.Config.EbsDefaultStorage
 import com.amazonaws.emr.utils.Constants._
 import com.amazonaws.emr.api.AwsPricing.DefaultCurrency
 import com.amazonaws.emr.report.HtmlPage
-import com.amazonaws.emr.spark.models.runtime.Environment.{emptyEmrOnEc2, emptyEmrOnEks, emptyEmrServerless}
-import com.amazonaws.emr.spark.models.{AppInfo, AppRecommendations}
-import com.amazonaws.emr.spark.models.runtime.{EmrEnvironment, EmrOnEksEnv, SparkRuntime}
+import com.amazonaws.emr.spark.models.runtime.Environment.emptyEmrOnEc2
+import com.amazonaws.emr.spark.models.runtime.Environment.emptyEmrOnEks
+import com.amazonaws.emr.spark.models.runtime.Environment.emptyEmrServerless
+import com.amazonaws.emr.spark.models.AppInfo
+import com.amazonaws.emr.spark.models.AppRecommendations
+import com.amazonaws.emr.spark.models.runtime.EmrEnvironment
+import com.amazonaws.emr.spark.models.runtime.EmrOnEksEnv
+import com.amazonaws.emr.spark.models.runtime.SparkRuntime
 import com.amazonaws.emr.report.HtmlReport._
+import com.amazonaws.emr.spark.models.OptimalTypes.OptimalType
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.utils.Formatter._
 
-class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendations) extends HtmlPage {
+class PageRecommendations(optType: OptimalType, 
+                          appInfo: AppInfo,
+                          appRecommendations: AppRecommendations) extends HtmlPage {
 
-  private def render(
-    ec2: EmrEnvironment,
-    eks: EmrEnvironment,
-    svl: EmrEnvironment,
-    sparkCurr: SparkRuntime,
-    sparkOpt: SparkRuntime
-  ): String = {
+  override def render: String = {
+    
+    val current = appRecommendations.currentSparkConf.getOrElse(SparkRuntime.empty)
+    val optimal = appRecommendations.sparkConfs.getOrElse(optType, SparkRuntime.empty)
+    
+    val ec2 = appRecommendations.emrOnEc2Envs.getOrElse(optType, emptyEmrOnEc2)
+    val eks = appRecommendations.emrOnEksEnvs.getOrElse(optType, emptyEmrOnEks)
+    val svl = appRecommendations.emrServerlessEnvs.getOrElse(optType, emptyEmrServerless)
+    
+    val addInfo = appRecommendations.additionalInfo.get(optType).map(_.toMap)
 
-    val htmlTabPage = htmlNavTabs(id = "recommendedTab", tabs = Seq(
-      ("recDeployment", "Deployments", deploymentsTab(ec2, eks, svl)),
-      ("recExamples", "Commands / Examples", exampleTab(ec2, eks, svl, sparkOpt)),
-      ("recSpark", "Spark Settings", sparkTab(sparkCurr, sparkOpt))
-    ), "recDeployment", "nav-pills border navbar-light bg-light")
+    val (deploymentsHtml, suggestedHtml, selectedEnv) = deploymentsTab(optType, ec2, eks, svl, optimal, addInfo)
+    val htmlTabPage = htmlNavTabs(id = optType.toString+"recommendedTab", tabs = Seq(
+      ("recDeployment"+optType.toString, "Deployments", deploymentsHtml),
+      ("recSpark"+optType.toString, "Spark Settings", sparkTab(optType, current, optimal, suggestedHtml)),
+      ("recExamples"+optType.toString, "Commands / Examples", exampleTab(optType, ec2, eks, svl, optimal)),
+    ), "recDeployment"+optType.toString, "nav-pills border navbar-light bg-light")
     htmlTabPage
   }
 
-  def deploymentsTab(ec2: EmrEnvironment, eks: EmrEnvironment, svl: EmrEnvironment): String = {
+  def deploymentsTab(optType: OptimalType,
+                     ec2: EmrEnvironment, eks: EmrEnvironment, svl: EmrEnvironment,
+                     sparkRuntime: SparkRuntime,
+                     additionalInfo: Option[Map[String, String]]): (String, String, EmrEnvironment) = {
     val awsRegion = ec2.costs.region
-    val environments = List((ec2.label, ec2.costs.total), (eks.label, eks.costs.total), (svl.label, svl.costs.total))
+    val environments = List(
+      (ec2.label, ec2.costs.total, ec2),
+      (eks.label, eks.costs.total, eks),
+      (svl.label, svl.costs.total, svl)
+    )
     val cheaper = environments.minBy(_._2)
 
+    val durationStr = additionalInfo.map( m =>
+      m.get(ParamDuration.name).map(v => s", expected duration <= ${printDurationStr(v.toLong)},").getOrElse("")
+    ).getOrElse("")
+    
     val suggested = htmlBoxNote(
-      s"""Based on suggested configurations and projected runtime, your application will benefit running within
-         |${htmlBold(cheaper._1)}, with an estimated total costs of <b>${"%.2f".format(cheaper._2)} $DefaultCurrency</b>
+      s"""Based on suggested configurations${durationStr} and projected runtime, your application will benefit running within
+         | ${htmlBold(cheaper._1)}, with an estimated runtime of ${printDurationStr(sparkRuntime.runtime)} and 
+         | total costs of <b>${"%.2f".format(cheaper._2)} $DefaultCurrency</b>
          | in the ${htmlBold(awsRegion)} region""".stripMargin
     )
 
-    s"""<!-- Emr Deployment Recommended -->
+    (s"""<!-- Emr Deployment Recommended -->
        |<div class="row mt-4">
        |  <div class="col-sm">
        |    $suggested
@@ -51,7 +76,7 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
        |  <div class="card">
        |    <div class="card-header">
        |      <div class="float-start p-2">
-       |        $HtmlSvgEmrOnEc2
+       |        ${HtmlSvgEmrOnEc2(optType.toString)}
        |      </div>
        |      <h5 class="card-title pt-1">EMR on EC2</h5>
        |      <h6 class="card-subtitle text-muted float-start">Managed Hadoop running on Amazon EC2</h6>
@@ -68,7 +93,7 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
        |  <div class="card">
        |    <div class="card-header">
        |      <div class="float-start p-2">
-       |        $HtmlSvgEmrOnEks
+       |        ${HtmlSvgEmrOnEks(optType.toString)}
        |      </div>
        |      <h5 class="card-title pt-1">EMR on EKS</h5>
        |      <h6 class="card-subtitle text-muted float-start">Run your Spark workloads on Amazon EKS</h6>
@@ -85,7 +110,7 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
        |  <div class="card">
        |    <div class="card-header">
        |      <div class="float-start p-2">
-       |        $HtmlSvgEmrServerless
+       |        ${HtmlSvgEmrServerless(optType.toString)}
        |      </div>
        |      <h5 class="card-title pt-1">EMR Serverless</h5>
        |      <h6 class="card-subtitle text-muted float-start">Run your Spark workloads on EMR Serverless</h6>
@@ -99,19 +124,21 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
        |    </div>
        |  </div>
        |</div>
-       |""".stripMargin
+       |""".stripMargin, suggested, cheaper._3)
   }
 
-  def exampleTab(ec2: EmrEnvironment, eks: EmrEnvironment, svl: EmrEnvironment, sparkRuntime: SparkRuntime): String = {
-    val examplesNavTabs = htmlNavTabs("currEnvExample", Seq(
-      ("emrOnEc2Cmd", ec2.label,
+  def exampleTab(optType: OptimalType,
+                 ec2: EmrEnvironment, eks: EmrEnvironment, svl: EmrEnvironment, sparkRuntime: SparkRuntime): String = {
+    
+    val examplesNavTabs = htmlNavTabs(optType.toString + "currEnvExample", Seq(
+      (optType.toString + "emrOnEc2Cmd", ec2.label,
         s"""1. (Optional) Create default ${htmlLink("IAM Roles for EMR", LinkEmrOnEc2IamRoles)}
            |${htmlCodeBlock(ec2.exampleCreateIamRoles, "bash")}
            |2. Review the parameters and launch an EC2 cluster to test the configurations
            |${htmlCodeBlock(ec2.exampleSubmitJob(appInfo, sparkRuntime), "bash")}
            |<p>For additional details, see ${htmlLink("Getting started with Amazon EMR", LinkEmrOnEc2QuickStart)}
            |in the AWS Documentation.</p>""".stripMargin),
-      ("emrOnEksCmd", eks.label,
+      (optType.toString + "emrOnEksCmd", eks.label,
         s"""1. (Optional) Create an ${htmlLink("Amazon EKS cluster with Karpenter", LinkEmrOnEksKarpenterGettingStarted)}
            | and setup an ${htmlLink("EMR on EKS", LinkEmrOnEksQuickStart)} cluster with the ${htmlLink("Spark Operator", LinkEmrOnEksSparkOperator)}
            |<br/><br/>
@@ -123,7 +150,7 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
            |${htmlCodeBlock(eks.exampleSubmitJob(appInfo, sparkRuntime), "bash")}
            |<p>For additional details, see ${htmlLink("Running jobs with Amazon EMR on EKS", LinkEmrOnEksJobRunsDoc)}
            |in the EMR Documentation.</p>""".stripMargin),
-      ("emrServerlessCmd", svl.label,
+      (optType.toString + "emrServerlessCmd", svl.label,
         s"""1. (Optional) ${htmlLink("Create an IAM Job Role", LinkEmrServerlessJobRoleDoc)}
            |<br/><br/>
            |2. Create an Emr Serverless Application using the latest EMR release to submit your Spark job
@@ -132,57 +159,50 @@ class PageRecommendations(appInfo: AppInfo, appRecommendations: AppRecommendatio
            |${htmlCodeBlock(svl.exampleSubmitJob(appInfo, sparkRuntime), "bash")}
            |<p>For additional details, see ${htmlLink("Getting started with Amazon EMR Serverless", LinkEmrServerlessQuickStart)}
            |in the AWS Documentation.</p>""".stripMargin),
-      ("emrConfCmd", "Emr Classification",
+      (optType.toString + "emrConfCmd", "Emr Classification",
         s"""<p>For additional details, see ${htmlLink("Configure Applications", LinkEmrOnEc2ConfigureApps)}
            |in the EMR Documentation.</p>
            |${htmlCodeBlock(sparkRuntime.asEmrClassification, "json")}
            |""".stripMargin),
-      ("sparkSubmitCmd", "Spark Submit",
+      (optType.toString + "sparkSubmitCmd", "Spark Submit",
         s"""<p>For additional details, see ${htmlLink("Submitting Applications", LinkSparkSubmit)}
            |in the Spark Documentation.</p>
            |${htmlCodeBlock(sparkRuntime.toSparkSubmit(appInfo), "bash")}
            |""".stripMargin),
-    ), "emrOnEc2Cmd", "nav-tabs border-bottom-0 mt-4", "border py-4 px-4 mb-4")
+    ), optType.toString + "emrOnEc2Cmd", "nav-tabs border-bottom-0 mt-4", "border py-4 px-4 mb-4")
 
     s"""<!-- Example Commands -->
        |$examplesNavTabs
        |""".stripMargin
   }
 
-  def sparkTab(old: SparkRuntime, optimal: SparkRuntime): String = {
+  def sparkTab(optType: OptimalType,
+               current: SparkRuntime,
+               optimal: SparkRuntime,
+               suggestedHtml: String
+              ): String = {
 
     val sparkTable = htmlTable(
       List("", "Current", "Suggested"),
       List(
-        List("Application Runtime", printDurationStr(old.runtime), printDurationStr(optimal.runtime)),
-        List("Driver Cores", s"${old.driverCores}", s"${optimal.driverCores}"),
-        List("Driver Memory", humanReadableBytes(old.driverMemory), humanReadableBytes(optimal.driverMemory)),
-        List("Executor Cores", s"${old.executorCores}", s"${optimal.executorCores}"),
-        List("Executor Memory", humanReadableBytes(old.executorMemory), humanReadableBytes(optimal.executorMemory)),
-        List("Executors Count", s"${old.executorsNum}", s"${optimal.executorsNum}")
+        List("Application Runtime", printDurationStr(current.runtime), printDurationStr(optimal.runtime)),
+        List("Driver Cores", s"${current.driverCores}", s"${optimal.driverCores}"),
+        List("Driver Memory", humanReadableBytes(current.driverMemory), humanReadableBytes(optimal.driverMemory)),
+        List("Executor Cores", s"${current.executorCores}", s"${optimal.executorCores}"),
+        List("Executor Memory", humanReadableBytes(current.executorMemory), humanReadableBytes(optimal.executorMemory)),
+        List("Max Executors", s"${current.executorsNum}", s"${optimal.executorsNum}")
       ), CssTableStyle)
 
     s"""<!-- Apache Spark -->
+       |<div class="row mt-4">
+       |  <div class="col-sm">
+       |    $suggestedHtml
+       |    ${if (optimal.runtime >= current.runtime) htmlBoxNote(SparkConfigurationWarning) else ""}
+       |  </div>
+       |</div>
        |<div class="app-recommendations spark mt-4 mb-4">
        |  $sparkTable
        |</div>
-       |<div class="row mt-4">
-       |  <div class="col-sm">
-       |    ${if (optimal.runtime >= old.runtime) htmlBoxNote(SparkConfigurationWarning) else ""}
-       |  </div>
-       |</div>
        |""".stripMargin
-  }
-
-
-  override def render: String = {
-
-    val ec2 = appRecommendations.emrOnEc2Environment.getOrElse(emptyEmrOnEc2)
-    val eks = appRecommendations.emrOnEksEnvironment.getOrElse(emptyEmrOnEks)
-    val svl = appRecommendations.emrServerlessEnvironment.getOrElse(emptyEmrServerless)
-    val current = appRecommendations.currentSparkConf.getOrElse(SparkRuntime.empty)
-    val optimal = appRecommendations.optimalSparkConf.getOrElse(SparkRuntime.empty)
-
-    render(ec2, eks, svl, current, optimal)
   }
 }

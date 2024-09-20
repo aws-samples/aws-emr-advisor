@@ -43,7 +43,6 @@ case class SparkRuntime(
        |    "spark.driver.memory": "$driverMemStr",
        |    "spark.executor.cores": "$executorCores",
        |    "spark.executor.memory": "$executorMemStr",
-       |    "spark.executor.instances": "$executorsNum",
        |    "spark.dynamicAllocation.maxExecutors": "$executorsNum"$sparkConfigs
        |  }
        |}""".stripMargin
@@ -55,7 +54,7 @@ case class SparkRuntime(
        |]""".stripMargin
   }
 
-  def sparkMainConfString = s"""--conf spark.driver.cores=$driverCores --conf spark.driver.memory=$driverMemStr --conf spark.executor.cores=$executorCores --conf spark.executor.memory=$executorMemStr --conf spark.executor.instances=$executorsNum --conf spark.dynamicAllocation.maxExecutors=$executorsNum"""
+  def sparkMainConfString = s"""--conf spark.driver.cores=$driverCores --conf spark.driver.memory=$driverMemStr --conf spark.executor.cores=$executorCores --conf spark.executor.memory=$executorMemStr --conf spark.dynamicAllocation.maxExecutors=$executorsNum"""
 
   def runtimeHrs(extraTimeMs: Long = 0L): Double = (runtime + extraTimeMs) / (3600 * 1000.0)
 

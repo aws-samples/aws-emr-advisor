@@ -58,4 +58,7 @@ object Config {
   // Upper bound for the number of executors
   val ExecutorsMaxTestsCount: Int = 500
 
+  // cost range
+  val ExecutorsMaxCostRange: Double = 0.05 // TODO: configurable
+
 }

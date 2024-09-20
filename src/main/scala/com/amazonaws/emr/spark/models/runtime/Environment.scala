@@ -43,7 +43,8 @@ trait EmrEnvironment {
     Seq(
       (s"""EMR Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.emr)} $DefaultCurrency"),
       (s"""EC2 Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.hardware)} $DefaultCurrency"),
-      (s"""EBS Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.storage)} $DefaultCurrency")
+      (s"""EBS Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.storage)} $DefaultCurrency"),
+      (s"""<B>Total Costs</B> ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.emr + costs.hardware + costs.storage)} $DefaultCurrency")
     ), "list-group-flush mb-2", "px-0"
   )
 

@@ -21,7 +21,7 @@ object SparkHelper extends SparkHadoopUtil {
 
     } else {
       if (!cmd.contains("--arg")) {
-        args.head
+        args.find(_.contains(".jar")).getOrElse(NotAvailable)
       } else {
         base.getOrElse("jar", NotAvailable)
       }
@@ -29,7 +29,8 @@ object SparkHelper extends SparkHadoopUtil {
 
     val appArguments: List[String] = {
       if (!cmd.contains("--arg") && args.nonEmpty) {
-        args.tail
+        val afterJarArgs= args.dropWhile(_ != appScriptJarPath)
+        if(afterJarArgs.nonEmpty) afterJarArgs.tail else args
       } else {
         args
       }
