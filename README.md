@@ -71,6 +71,16 @@ usage: spark-submit --deploy-mode client --class com.amazonaws.emr.SparkLogsAnal
   SPARK_LOG                 Spark event logs path. Can process files or directories stored in S3 (s3://), HDFS (hdfs://), or local fs
 ```
 
+### Public jar file
+
+For easier access, there is a public jar file available at S3.  For example, for version 0.2.0-SNAPSHOT, the file path to jar file is `s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
+
+To run with `spark-submit`,  include the jar file as below (version 0.2.0-SNAPSHOT as an example)
+```
+--jars s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar
+```
+The jar file can also be downloaded at `https://awslabs-code-us-east-1.s3.amazonaws.com/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
+
 ### Example - Generate HTML report from a sample spark event log
 
 ```bash
