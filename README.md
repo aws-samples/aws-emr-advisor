@@ -75,9 +75,9 @@ usage: spark-submit --deploy-mode client --class com.amazonaws.emr.SparkLogsAnal
 
 For easier access, there is a public jar file available at S3.  For example, for version 0.2.0-SNAPSHOT, the file path to jar file is `s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
 
-To run with `spark-submit`,  include the jar file as below (version 0.2.0-SNAPSHOT as an example)
+To run with `spark-submit`,  include the application jar file as below (version 0.2.0-SNAPSHOT as an example)
 ```
---jars s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar
+s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar
 ```
 The jar file can also be downloaded at `https://awslabs-code-us-east-1.s3.amazonaws.com/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
 

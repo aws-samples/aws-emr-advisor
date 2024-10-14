@@ -13,6 +13,7 @@ import com.amazonaws.emr.utils.Constants.ParamExecutors
 import com.amazonaws.emr.utils.Formatter.asGB
 import com.amazonaws.emr.utils.Formatter.byteStringAsBytes
 import com.amazonaws.emr.utils.Formatter.humanReadableBytes
+import com.amazonaws.emr.utils.Formatter.normalizeName
 import com.amazonaws.emr.utils.Formatter.roundUp
 import org.apache.spark.internal.Logging
 
@@ -50,7 +51,8 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
       appContext.appSparkExecutors.executorsMaxRunning)
     appContext.appRecommendations.currentSparkConf = Some(currentConf)
 
-    val maxExecutors: Int = Try(options(ParamExecutors.name).toInt).getOrElse(Config.ExecutorsMaxTestsCount)
+    val maxExecutors: Int = Try(options(normalizeName(ParamExecutors.name)).toInt)
+                              .getOrElse(Config.ExecutorsMaxTestsCount)
     val expectedDuration: Option[Long] = Try(Duration(options(ParamDuration.name)).toMillis).toOption
 
     val coresList = getOptimalCoresPerExecutor(appContext)

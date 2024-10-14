@@ -1,14 +1,16 @@
 package com.amazonaws.emr.spark.models.runtime
 
-import com.amazonaws.emr.Config.{EmrServerlessFreeStorageGb, EmrServerlessRoleName}
+import com.amazonaws.emr.Config.{EmrServerlessRoleName, EmrServerlessFreeStorageGb}
 import com.amazonaws.emr.utils.Constants.LinkEmrServerlessArchDoc
 import com.amazonaws.emr.api.AwsCosts.EmrServerlessCost
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, DefaultCurrency}
-import com.amazonaws.emr.report.HtmlReport.{htmlGroupListWithFloat, htmlLink, htmlTable, htmlTextRed, htmlTextSmall}
+import com.amazonaws.emr.report.HtmlReport.{htmlTextRed, htmlGroupListWithFloat, htmlTable, htmlTextSmall, htmlLink}
 import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime.getMemoryWithOverhead
 import com.amazonaws.emr.utils.Formatter._
+
+import scala.language.postfixOps
 
 case class EmrServerlessEnv(
   totalCores: Int,
@@ -17,7 +19,10 @@ case class EmrServerlessEnv(
   architecture: ArchitectureType.Value,
   driver: ResourceRequest,
   executors: ResourceRequest,
-  costs: EmrServerlessCost
+  costs: EmrServerlessCost,
+  // Due to Serverless work node size limit (https://docs.aws.amazon.com/emr/latest/EMR-Serverless-UserGuide/app-behavior.html#worker-configs),
+  // we may need to use bigger workers for higher memory, in this case spark.task.cpus can larger than 1
+  task_cpus: Int = 1  
 ) extends EmrEnvironment {
 
   val freeStorage: Long = byteStringAsBytes(EmrServerlessFreeStorageGb)
@@ -35,10 +40,12 @@ case class EmrServerlessEnv(
        |Your application will use the following resources:
        |""".stripMargin
 
-  override def htmlServiceNotes: Seq[String] = Seq(
-    htmlTextSmall(s"* Costs include additional Spark memory overhead"),
-    htmlTextSmall(s"** Storage allocation: ${humanReadableBytes(freeStorage)} (Free) + ${humanReadableBytes(billableStorage)} (Paid)")
-  )
+  override def htmlServiceNotes: Seq[String] = {
+    val notes = Seq(
+      htmlTextSmall(s"* Costs include additional Spark memory overhead"),
+      htmlTextSmall(s"** Storage allocation: ${humanReadableBytes(freeStorage)} (Free) + ${humanReadableBytes(billableStorage)} (Paid)"))
+    notes ++ (if(task_cpus > 1) { Seq(htmlTextSmall(s"*** Set spark.task.cpus to ${task_cpus}"))} else {Seq.empty[String]})
+  }
 
   override def htmlCosts: String = htmlGroupListWithFloat(Seq(
     (s"""Cores Costs ${htmlTextSmall("*")}""", s"${"%.2f".format(costs.cpu)} $DefaultCurrency"),
