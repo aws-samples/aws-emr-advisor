@@ -248,7 +248,9 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
           ArchitectureType.ARM64,
           ContainerRequest(1, driverNode.cpu, driverNode.memory, freeStorage),
           ContainerRequest(executorsNum, executorNode.cpu, executorNode.memory, executorsTotalStorage / executorsNum),
-          totalCostsArm))
+          totalCostsArm,
+          executorNode.cpu/sparkRuntimeConfigs.executorCores
+        ))
       else
         Some(EmrServerlessEnv(
           totalCores,
@@ -257,7 +259,9 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
           ArchitectureType.X86_64,
           ContainerRequest(1, driverNode.cpu, driverNode.memory, freeStorage),
           ContainerRequest(executorsNum, executorNode.cpu, executorNode.memory, executorsTotalStorage / executorsNum),
-          totalCostsX86))
+          totalCostsX86,
+          executorNode.cpu/sparkRuntimeConfigs.executorCores
+        ))
 
     }
 

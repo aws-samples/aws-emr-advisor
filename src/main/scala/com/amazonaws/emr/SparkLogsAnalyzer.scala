@@ -3,6 +3,7 @@ package com.amazonaws.emr
 import com.amazonaws.emr.report.HtmlReport
 import com.amazonaws.emr.spark.EmrSparkLogParser
 import com.amazonaws.emr.utils.Constants._
+import com.amazonaws.emr.utils.Formatter.normalizeName
 
 import scala.annotation.tailrec
 import scala.sys.exit
@@ -24,7 +25,7 @@ object SparkLogsAnalyzer extends App {
     list match {
       case Nil => map
       case x :: value :: tail if x.startsWith("--") =>
-        if (optParams.exists(_.option == x)) parseArgs(map ++ Map(x.replaceAll("-", "") -> value), tail)
+        if (optParams.exists(_.option == x)) parseArgs(map ++ Map(normalizeName(x) -> value), tail)
         else {
           println(usage)
           println("Error: Unknown option " + x)

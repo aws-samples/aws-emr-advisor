@@ -132,5 +132,9 @@ object Formatter {
     val gigabyte = megabyte * 1024
     bytes.toDouble / gigabyte
   }
+  
+  def normalizeName(name: String): String = {
+    name.replaceAll("-", "")
+  }
 
 }
