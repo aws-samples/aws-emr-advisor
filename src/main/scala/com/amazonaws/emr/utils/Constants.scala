@@ -1,10 +1,13 @@
 package com.amazonaws.emr.utils
 
 import com.amazonaws.emr.report.HtmlReport.htmlBold
+import software.amazon.awssdk.regions.Region
 
 object Constants {
 
   val NotAvailable = "Not Available"
+  
+  val DefaultRegion = Region.US_EAST_1.toString
 
   // Documentation Link
   val LinkEmrOnEc2Documentation = "https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-is-emr.html"
