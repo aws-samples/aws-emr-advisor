@@ -11,6 +11,7 @@ import com.amazonaws.emr.spark.models.runtime.Environment._
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime.getMemoryWithOverhead
+import com.amazonaws.emr.utils.Constants.DefaultRegion
 import com.amazonaws.emr.utils.Constants.{ParamSpot, ParamRegion}
 import org.apache.spark.internal.Logging
 
@@ -24,7 +25,7 @@ class AppEnvCostAnalyzer extends AppAnalyzer with Logging {
     val spotDiscount: Double = options.getOrElse(ParamSpot.name, "0.0").toDouble
 
     // check for specific regions to compute costs
-    val awsRegion = options.getOrElse(ParamRegion.name, "us-east-1")
+    val awsRegion = options.getOrElse(ParamRegion.name, DefaultRegion)
     logInfo(s"Computing costs for $awsRegion region")
 
     // get instances with corresponding price

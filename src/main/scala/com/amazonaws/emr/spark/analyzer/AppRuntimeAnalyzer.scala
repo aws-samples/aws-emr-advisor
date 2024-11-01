@@ -4,6 +4,8 @@ import com.amazonaws.emr.utils.Constants.NotAvailable
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.runtime._
+import com.amazonaws.emr.utils.Constants.DefaultRegion
+import com.amazonaws.emr.utils.Constants.ParamRegion
 import com.amazonaws.services.costandusagereport.model.AWSRegion
 import org.apache.spark.internal.Logging
 import org.apache.spark.utils.SparkHelper.parseSparkCmd
@@ -60,7 +62,8 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
 
       val appName = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.name", NotAvailable)
       val jobRunId = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.id", NotAvailable)
-      val region = appContext.appConfigs.sparkConfigs.getOrElse("spark.hadoop.aws.region", NotAvailable)
+      val region = appContext.appConfigs.sparkConfigs.getOrElse("spark.hadoop.aws.region",
+        options.getOrElse(ParamRegion.name, DefaultRegion))
       val application = AwsEmr.findServerlessApplicationByJobRun(appName, jobRunId, Region.of(region))
 
       EmrServerlessRun(jobRunId, sparkVersion, application)
