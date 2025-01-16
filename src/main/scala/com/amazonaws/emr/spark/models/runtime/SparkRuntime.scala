@@ -1,7 +1,8 @@
 package com.amazonaws.emr.spark.models.runtime
 
-import com.amazonaws.emr.spark.models.AppInfo
+import com.amazonaws.emr.spark.models.{AppContext, AppInfo}
 import com.amazonaws.emr.utils.Formatter._
+import org.apache.logging.log4j.scala.Logging
 
 case class SparkRuntime(
   runtime: Long,
@@ -18,6 +19,17 @@ case class SparkRuntime(
   val executorMemStr = if (executorMemory >= byteStringAsBytes("1g")) s"${toGB(executorMemory)}g" else s"${toMB(executorMemory)}M"
 
   override def toString: String =
+    s"""
+       |App duration  : ${printDuration(runtime)}
+       |Driver cores  : $driverCores
+       |Driver memory : ${humanReadableBytes(driverMemory)}
+       |Exec. cores   : $executorCores
+       |Exec. memory  : ${humanReadableBytes(executorMemory)}
+       |Exec. number  : $executorsNum
+       |Exec. storage : ${humanReadableBytes(executorStorageRequired)}
+       |""".stripMargin
+
+  def toHtml: String =
     s"""Your application was running for <b>${printDurationStr(runtime)}</b> using <b>$executorsNum</b>
        |executors each with <b>$executorCores</b> cores and <b>${humanReadableBytes(executorMemory)}</b> memory.
        |The driver was launched with <b>$driverCores</b> cores and <b>${humanReadableBytes(driverMemory)}</b> memory
@@ -58,14 +70,42 @@ case class SparkRuntime(
 
   def runtimeHrs(extraTimeMs: Long = 0L): Double = (runtime + extraTimeMs) / (3600 * 1000.0)
 
+  def getDriverContainer: ContainerRequest = {
+    ContainerRequest(1, driverCores, driverMemory, 0L)
+  }
+
+  def getExecutorContainer: ContainerRequest = {
+    ContainerRequest(
+      executorsNum,
+      executorCores,
+      executorMemory,
+      executorStorageRequired
+    )
+  }
+
 }
 
-object SparkRuntime {
+object SparkRuntime extends Logging {
 
   def empty: SparkRuntime = SparkRuntime(0, 0, 0, 0, 0, 0, 0)
 
   def getMemoryWithOverhead(memory: Long, defaultOverheadFactor: Double = 0.1): Long = {
     (memory * (1 + defaultOverheadFactor)).toLong
+  }
+
+  def fromAppContext(appContext: AppContext): SparkRuntime = {
+    logger.info("Analyze Spark settings...")
+    val currentConf = SparkRuntime(
+      appContext.appInfo.duration,
+      appContext.appSparkExecutors.defaultDriverCores,
+      appContext.appSparkExecutors.defaultDriverMemory,
+      appContext.appSparkExecutors.defaultExecutorCores,
+      appContext.appSparkExecutors.defaultExecutorMemory,
+      appContext.appSparkExecutors.getRequiredStoragePerExecutor,
+      appContext.appSparkExecutors.executorsMaxRunning
+    )
+    logger.debug(currentConf)
+    currentConf
   }
 
 }

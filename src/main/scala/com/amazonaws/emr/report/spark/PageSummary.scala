@@ -1,20 +1,45 @@
 package com.amazonaws.emr.report.spark
 
-import com.amazonaws.emr.utils.Constants.{LinkSparkConf, LinkSparkQuickStart}
 import com.amazonaws.emr.report.HtmlPage
 import com.amazonaws.emr.spark.models.{AppConfigs, AppInfo}
+import com.amazonaws.emr.utils.Constants.{LinkSparkConf, LinkSparkQuickStart}
 import com.amazonaws.emr.utils.Formatter.{humanReadableBytes, printDate, printDuration, printTime}
-import com.amazonaws.emr.report.HtmlReport.{htmlCodeBlock, htmlGroupList, htmlNavTabs, htmlTable}
 
 class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
+
+  val applicationType = if (appInfo.isSparkStreaming) "Streaming Job" else "Batch Job"
+
+  override def pageId: String = "summary"
+
+  override def pageIcon: String = "house-fill"
+
+  override def pageName: String = "Summary"
+
+  override def isActive: Boolean = true
+
+  override def content: String = {
+
+    val htmlTabs = Seq(
+      ("summaryApp", "Application", htmlAppSummary),
+      ("summaryInsights", "Insights", htmlInsights)
+    )
+
+    val htmlFinalTabs = {
+      if (appInfo.insightsTaskFailures.nonEmpty) {
+        htmlTabs :+ ("summaryFailures", "Task Failures", htmlTaskFailures)
+      } else htmlTabs
+    }
+
+    htmlNavTabs("summaryTab", htmlFinalTabs, "summaryApp", "nav-pills border navbar-light bg-light", "mt-3 text-break")
+  }
 
   private def appInfoTable: String = htmlTable(
     Nil,
     List(
       List("Application ID", appInfo.applicationID),
       List("Application Name", appInfo.sparkAppName),
-      List("Application Start", s"""<span class="fw-bold text-black-50">${printDate(appInfo.startTime)}</span> ${printTime(appInfo.startTime)}"""),
-      List("Application End", s"""<span class="fw-bold text-black-50">${printDate(appInfo.endTime)}</span> ${printTime(appInfo.endTime)}"""),
+      List("Application Start", s"""${printTime(appInfo.startTime)} <span class="text-black-50 float-end">${printDate(appInfo.startTime)}</span>"""),
+      List("Application End", s"""${printTime(appInfo.endTime)} <span class="text-black-50 float-end">${printDate(appInfo.endTime)}</span>"""),
       List("Application Runtime", printDuration(appInfo.duration))
     ), CssTableStyle)
 
@@ -24,7 +49,8 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
       List("Application Language", "scala"),
       List("Application Class", appInfo.sparkCmd.get.appMainClass),
       List("Application Jar", appInfo.sparkCmd.get.appScriptJarPath),
-      List("Application Params", appInfo.sparkCmd.get.appArguments.mkString(" "))
+      List("Application Params", appInfo.sparkCmd.get.appArguments.mkString(" ")),
+      List("Application Type", applicationType),
     ), CssTableStyle)
 
   private def pyRuntime: String = htmlTable(
@@ -32,7 +58,8 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
     List(
       List("Application Language", "python"),
       List("Application Script", appInfo.sparkCmd.get.appScriptJarPath),
-      List("Application Params", appInfo.sparkCmd.get.appArguments.mkString(" "))
+      List("Application Params", appInfo.sparkCmd.get.appArguments.mkString(" ")),
+      List("Application Type", applicationType),
     ), CssTableStyle)
 
   private val insightData = List(
@@ -50,8 +77,8 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
         List("EMR Deployment", appInfo.runtime.deploymentInfo),
         List("EMR Release", appInfo.runtime.releaseInfo()),
         List("Java Version", s"${appConfigs.javaConfigs.getOrElse("Java Version", "NA")}"),
-        List("Spark Version", s"""${appConfigs.sparkVersion} / <a href="$LinkSparkQuickStart" target="_blank">Doc</a> / <a href="$LinkSparkConf" target="_blank">Config</a>"""),
-        List("Scala Version", s"${appConfigs.javaConfigs.getOrElse("Scala Version", "NA")}")
+        List("Spark Version", s"""${appConfigs.sparkVersion} / ${htmlLink("Documentation", LinkSparkQuickStart)} / ${htmlLink("Configs", LinkSparkConf)}"""),
+        List("Scala Version", s"${appConfigs.javaConfigs.getOrElse("Scala Version", "NA").replace("version", "")}")
       ), CssTableStyle)
   }
 
@@ -76,7 +103,7 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
       ), CssTableStyle)
   }
 
-  def htmlAppSummary: String = {
+  private def htmlAppSummary: String = {
     s"""<div class="row">
        |  <div class="col-sm">
        |    $appInfoTable
@@ -89,11 +116,8 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
        |  <div class="col-sm">
        |    ${if (appInfo.sparkCmd.get.isScala) scalaRuntime else if (appInfo.sparkCmd.get.isPython) pyRuntime}
        |  </div>
-       |</div>""".stripMargin
-  }
-
-  def htmlSparkSummary: String = {
-    s"""<div class="row">
+       |</div>
+       |<div class="row">
        |  <div class="col-sm">
        |    $appConfigSparkTable
        |  </div>
@@ -103,13 +127,13 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
        |</div>""".stripMargin
   }
 
-  def htmlInsights: String = {
+  private def htmlInsights: String = {
     s"""<div class="col-sm">
        |  $appInfoInsights
        |</div>""".stripMargin
   }
 
-  def htmlTaskFailures: String = {
+  private def htmlTaskFailures: String = {
     s"""<div class="row">
        |  <div class="col-sm">
        |    <div id="list-example" class="list-group list-group-horizontal" style="display: grid !important; grid-template-columns: repeat(25, 1fr);">
@@ -121,23 +145,6 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
        |  </div>
        |</div>
        |""".stripMargin
-  }
-
-  override def render: String = {
-
-    val htmlTabs = Seq(
-      ("summaryApp", "Application", htmlAppSummary),
-      ("summaryInsights", "Insights", htmlInsights),
-      ("summarySpark", "Spark", htmlSparkSummary),
-    )
-
-    val htmlFinalTabs = {
-      if (appInfo.insightsTaskFailures.nonEmpty) {
-        htmlTabs :+ ("summaryFailures", "Task Failures", htmlTaskFailures)
-      } else htmlTabs
-    }
-
-    htmlNavTabs("summaryTab", htmlFinalTabs, "summaryApp", "nav-pills border navbar-light bg-light", "mt-4 text-break")
   }
 
 }

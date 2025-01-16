@@ -14,6 +14,8 @@ class AppInfo {
   var startTime: Long = 0L
   var endTime: Long = 0L
 
+  var isSparkStreaming: Boolean = false
+
   val insightsInfo = new scala.collection.mutable.HashMap[String, String]
   val insightsWarn = new scala.collection.mutable.HashMap[String, String]
   val insightsIssue = new scala.collection.mutable.HashMap[String, String]

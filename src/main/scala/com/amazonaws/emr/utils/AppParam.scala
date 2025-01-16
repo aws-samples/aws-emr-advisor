@@ -4,16 +4,15 @@ case class AppParam(name: String, description: String = "", isOptional: Boolean 
 
   def option: String = s"--$name"
 
-  def template: String = if (isOptional) s"[$option $upper]" else s"<$upper>"
+  def template: String =
+    if (isOptional) s"[$option ${name.toUpperCase}]"
+    else s"<${name.toUpperCase}>"
 
-  def example: String = s"  ${format(upper)} $description"
+  def example: String = f"  ${format(name.toUpperCase)} $description"
 
-  private def upper = name.toUpperCase()
-
-  private def format(text: String) = {
-    val fixed = 25
-    val len = text.length
-    text + " " * (fixed - len)
+  private def format(text: String): String = {
+    val fixedWidth = 25
+    text.padTo(fixedWidth, ' ')
   }
 
 }

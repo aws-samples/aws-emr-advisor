@@ -3,8 +3,8 @@ package com.amazonaws.emr.utils
 import org.apache.spark.network.util.JavaUtils
 
 import java.text.SimpleDateFormat
-import java.util.{Date, Locale}
 import java.util.concurrent.TimeUnit._
+import java.util.{Date, Locale}
 
 object Formatter {
 
@@ -56,6 +56,13 @@ object Formatter {
       }
     }
     "%.1f %s".formatLocal(Locale.US, value, unit)
+  }
+
+  def toDays(millis: Long): Int = {
+    val seconds = millis / 1000F
+    val minutes = seconds / 60F
+    val hours = minutes / 60F
+    (hours / 24F).toInt
   }
 
   /**
@@ -132,7 +139,7 @@ object Formatter {
     val gigabyte = megabyte * 1024
     bytes.toDouble / gigabyte
   }
-  
+
   def normalizeName(name: String): String = {
     name.replaceAll("-", "")
   }

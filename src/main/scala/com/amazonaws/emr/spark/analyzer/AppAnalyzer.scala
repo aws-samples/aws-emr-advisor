@@ -1,7 +1,7 @@
 package com.amazonaws.emr.spark.analyzer
 
 import com.amazonaws.emr.spark.models.AppContext
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 
 trait AppAnalyzer {
 
@@ -22,7 +22,6 @@ object AppAnalyzer extends Logging {
       new AppRuntimeAnalyzer,
       new AppEfficiencyAnalyzer,
       new AppOptimizerAnalyzer,
-      new AppEnvCostAnalyzer,
       new AppInsightsAnalyzer
     )
 
@@ -31,7 +30,7 @@ object AppAnalyzer extends Logging {
         x.analyze(appContext, options)
       } catch {
         case e: Throwable =>
-          logError(s"Failed in Analyzer ${x.getClass.getSimpleName}")
+          logger.error(s"Failed in Analyzer ${x.getClass.getSimpleName}")
           e.printStackTrace()
       }
     })

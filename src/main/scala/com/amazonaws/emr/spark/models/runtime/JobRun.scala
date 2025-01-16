@@ -1,7 +1,7 @@
 package com.amazonaws.emr.spark.models.runtime
 
-import com.amazonaws.emr.utils.Constants.{LinkEmrOnEc2Documentation, LinkEmrOnEksDocumentation, LinkEmrServerlessDocumentation, NotAvailable}
 import com.amazonaws.emr.api.AwsEmr
+import com.amazonaws.emr.utils.Constants.{LinkEmrOnEc2Documentation, LinkEmrOnEksDocumentation, LinkEmrServerlessDocumentation, NotAvailable}
 import software.amazon.awssdk.services.emrserverless.model._
 
 trait JobRun {
@@ -29,7 +29,10 @@ trait JobRun {
 
   def releaseInfo(): String = {
     if (release.nonEmpty) {
-      release.map(r => s"""<a target="_blank" href="${baseReleaseUrl(r)}">$r</a>""").mkString(" / ")
+      release
+        .sorted
+        .map(r => s"""<a target="_blank" href="${baseReleaseUrl(r)}">$r</a>""")
+        .mkString(" / ")
     } else {
       NotAvailable
     }
@@ -37,11 +40,11 @@ trait JobRun {
 
 }
 
-case class EmrOnEc2Run
-(clusterId: String,
- sparkVersion: String,
- releaseLabel: Option[String],
- region: String = "") extends JobRun {
+case class EmrOnEc2Run(
+  clusterId: String,
+  sparkVersion: String,
+  releaseLabel: Option[String],
+  region: String = "") extends JobRun {
 
   override val name: String = "Emr On Ec2"
 
@@ -71,10 +74,10 @@ case class EmrOnEc2Run
 
 }
 
-case class EmrOnEksRun
-(sparkVersion: String,
- releaseLabel: Option[String],
- region: String = "") extends JobRun {
+case class EmrOnEksRun(
+  sparkVersion: String,
+  releaseLabel: Option[String],
+  region: String = "") extends JobRun {
 
   override val name: String = "Emr On Eks"
 
@@ -97,10 +100,10 @@ case class EmrOnEksRun
 
 }
 
-case class EmrServerlessRun
-(jobRunId: String,
- sparkVersion: String,
- appSummary: Option[ApplicationSummary]) extends JobRun {
+case class EmrServerlessRun(
+  jobRunId: String,
+  sparkVersion: String,
+  appSummary: Option[ApplicationSummary]) extends JobRun {
 
   override val name: String = "Emr Serverless"
 

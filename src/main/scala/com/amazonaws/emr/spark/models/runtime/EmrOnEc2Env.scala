@@ -3,33 +3,38 @@ package com.amazonaws.emr.spark.models.runtime
 import com.amazonaws.emr.Config
 import com.amazonaws.emr.Config.{EmrOnEc2MinStorage, EmrOnEc2ProvisioningMs}
 import com.amazonaws.emr.api.AwsCosts.EmrOnEc2Cost
-import com.amazonaws.emr.api.AwsPricing.EmrInstance
 import com.amazonaws.emr.api.AwsEmr
-import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toMB}
-import com.amazonaws.emr.report.HtmlReport._
+import com.amazonaws.emr.api.AwsPricing.EmrInstance
+import com.amazonaws.emr.report.HtmlBase
 import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.EmrOnEc2Env.{getClusterClassifications, getNodeUsableMemory}
+import com.amazonaws.emr.utils.Constants.{HtmlSvgEmrOnEc2, LinkEmrOnEc2IamRoles, LinkEmrOnEc2QuickStart}
+import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toMB}
 
 case class EmrOnEc2Env(
   masterNode: EmrInstance,
   coreNode: EmrInstance,
   coreNodeNum: Int,
-  sparkRuntimeConfigs: SparkRuntime,
+  sparkRuntime: SparkRuntime,
   yarnContainersPerInstance: Int,
   costs: EmrOnEc2Cost,
   driver: ResourceRequest,
   executors: ResourceRequest
-) extends Ordered[EmrOnEc2Env] with EmrEnvironment {
+) extends Ordered[EmrOnEc2Env] with EmrEnvironment with HtmlBase {
 
-  val baseStorage = byteStringAsBytes(EmrOnEc2MinStorage)
-  val sparkStorage = yarnContainersPerInstance * executors.storage
-  val workerStorage = baseStorage + sparkStorage
+  private val baseStorage = byteStringAsBytes(EmrOnEc2MinStorage)
+  private val sparkStorage = yarnContainersPerInstance * executors.storage
+  private val workerStorage = baseStorage + sparkStorage
 
   def compare(that: EmrOnEc2Env): Int = this.costs.total compare that.costs.total
 
-  override def instances: List[String] = List(masterNode.instanceType, coreNode.instanceType)
-
   override def label: String = "Emr On Ec2"
+
+  override def description: String = "Managed Hadoop running on Amazon EC2"
+
+  override def serviceIcon: String = HtmlSvgEmrOnEc2
+
+  override def instances: List[String] = List(masterNode.instanceType, coreNode.instanceType)
 
   override def totalCores: Int = coreNodeNum * coreNode.vCpu + masterNode.vCpu
 
@@ -44,7 +49,7 @@ case class EmrOnEc2Env(
        |""".stripMargin
 
   override def htmlResources: String = htmlTable(
-    List("Role", "Count", "Instance", "Cpu per Instance", "Memory", s"Storage ${htmlTextSmall("**")}"),
+    List("Role", "Count", "Instance", "Cpu", "Memory", s"Storage ${htmlTextSmall("**")}"),
     List(
       List("master", "1", masterNode.instanceType, s"${masterNode.vCpu}", s"${masterNode.memoryGiB}GB", humanReadableBytes(baseStorage)),
       List("core", s"$coreNodeNum", coreNode.instanceType, s"${coreNode.vCpu}", s"${coreNode.memoryGiB}GB", humanReadableBytes(workerStorage))
@@ -56,22 +61,33 @@ case class EmrOnEc2Env(
     htmlTextSmall(s"** Storage allocation: ${humanReadableBytes(baseStorage)} (OS) + ${humanReadableBytes(sparkStorage)} (Spark)")
   )
 
-  override def exampleCreateIamRoles: String = "aws emr create-default-roles"
+  override def htmlExample(appInfo: AppInfo): String = {
+    s"""1. (Optional) Create default ${htmlLink("IAM Roles for EMR", LinkEmrOnEc2IamRoles)}
+       |${htmlCodeBlock(exampleCreateIamRoles, "bash")}
+       |2. Review the parameters and launch an EC2 cluster to test the configurations
+       |${htmlCodeBlock(exampleSubmitJob(appInfo), "bash")}
+       |<p>For additional details, see ${htmlLink("Getting started with Amazon EMR", LinkEmrOnEc2QuickStart)}
+       |in the AWS Documentation.</p>""".stripMargin
+  }
 
-  override def exampleSubmitJob(appInfo: AppInfo, conf: SparkRuntime): String = {
+  private def exampleCreateIamRoles: String = "aws emr create-default-roles"
+
+  private def exampleSubmitJob(appInfo: AppInfo): String = {
 
     val epoch = System.currentTimeMillis()
     val emrRelease = AwsEmr.latestRelease()
     val stepName = htmlTextRed(s"spark-test-$epoch")
     val classifications = getClusterClassifications(
-      sparkRuntimeConfigs, toMB(getNodeUsableMemory(coreNode))
+      sparkRuntime, toMB(getNodeUsableMemory(coreNode))
     ).replaceAll("\n", "\n    ")
 
     val sparkCmd = appInfo.sparkCmd.get
 
     s"""# Get a random public subnet from default VPC
-       |VPC_ID=$$(aws ec2 describe-vpcs | jq -r ".Vpcs[] | select(.IsDefault==true)|.VpcId")
-       |SUBNET_ID=$$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$$VPC_ID" | jq -r ".Subnets[] | select(.MapPublicIpOnLaunch==true)|.SubnetId" | shuf | head -n 1)
+       |VPC_ID=$$(aws ec2 describe-vpcs | jq -r ".Vpcs[] | select(.IsDefault==true) | .VpcId")
+       |SUBNET_ID=$$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$$VPC_ID" | \\
+       |  jq -r '.Subnets[] | select(.MapPublicIpOnLaunch == true) | .SubnetId' | \\
+       |  shuf | head -n 1)
        |
        |aws emr create-cluster \\
        |  --name "${htmlTextRed(s"spark-test-$epoch")}" \\
@@ -82,10 +98,20 @@ case class EmrOnEc2Env(
        |  --instance-groups \\
        |    InstanceGroupType=MASTER,InstanceCount=1,InstanceType=${masterNode.instanceType} \\
        |    InstanceGroupType=CORE,InstanceCount=$coreNodeNum,InstanceType=${coreNode.instanceType} \\
-       |  --steps Name="$stepName",Args=[${sparkCmd.submitEc2Step}],ActionOnFailure=CONTINUE,Jar="command-runner.jar",Type=CUSTOM_JAR \\
        |  --configurations '$classifications' \\
        |  --auto-terminate \\
-       |  --tags Project=${htmlTextRed(s"spark-test-$epoch")}
+       |  --tags Project=${htmlTextRed(s"spark-test-$epoch")} \\
+       |  --steps '[
+       |    {
+       |      "Name": "$stepName",
+       |      "Args": [
+       |        ${sparkCmd.submitEc2Step}
+       |      ],
+       |      "ActionOnFailure": "CONTINUE",
+       |      "Jar": "command-runner.jar",
+       |      "Type": "CUSTOM_JAR"
+       |    }
+       |  ]'
        |""".stripMargin
   }
 
@@ -107,7 +133,7 @@ object EmrOnEc2Env {
       .stripMargin
   }
 
-  def getYarnClassification(nodeManagerMemoryMb: Long): String = {
+  private def getYarnClassification(nodeManagerMemoryMb: Long): String = {
     s"""{
        |  "Classification": "yarn-site",
        |  "Properties": {

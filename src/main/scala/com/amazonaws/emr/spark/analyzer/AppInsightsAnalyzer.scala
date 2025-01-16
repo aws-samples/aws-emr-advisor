@@ -1,21 +1,17 @@
 package com.amazonaws.emr.spark.analyzer
 
 import com.amazonaws.emr.api.AwsEmr
-import com.amazonaws.emr.report.HtmlReport.{htmlBold, htmlTextInfo, htmlTextIssue, htmlTextWarning}
+import com.amazonaws.emr.report.HtmlBase
 import com.amazonaws.emr.spark.models.AppContext
-import com.amazonaws.emr.utils.Formatter
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr}
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 
-class AppInsightsAnalyzer extends AppAnalyzer with Logging {
+class AppInsightsAnalyzer extends AppAnalyzer with HtmlBase with Logging {
 
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
-    logInfo("Generate application insights...")
+    logger.info("Generate application insights...")
 
-    // ========================================================================
-    // Summarize application results as insights
-    // ========================================================================
     val executors = appContext.appSparkExecutors
     val totalSpilledBytes = executors.getTotalDiskBytesSpilled
     val totalShuffleBytesWritten = executors.getTotalShuffleBytesWritten
@@ -52,12 +48,13 @@ class AppInsightsAnalyzer extends AppAnalyzer with Logging {
     // Spark Driver
     if (appContext.appConfigs.driverMemory >= byteStringAsBytes("10g"))
       appContext.appInfo.insightsWarn("base_driver") = htmlTextWarning(
-        s"Your Spark driver was launched with <b>${humanReadableBytes(appContext.appConfigs.driverMemory)}</b>. " +
+        s"The Spark driver was launched with <b>${humanReadableBytes(appContext.appConfigs.driverMemory)}</b>. " +
           s"Unless strictly required, consider reducing this value"
       )
 
     // Spark Executors
     appContext.appInfo.insightsInfo("executor_info") = htmlTextInfo(executors.summary)
+    appContext.appInfo.insightsInfo("executor_info2") = htmlTextInfo(executors.summaryResources)
     appContext.appInfo.insightsInfo("executor_launch") = htmlTextInfo(
       s"The maximum launch time for an executor was <b>${printDurationStr(executors.getMaxLaunchTime)}</b>"
     )
@@ -67,13 +64,13 @@ class AppInsightsAnalyzer extends AppAnalyzer with Logging {
         htmlTextWarning("Shuffle writes are not uniform across executors")
 
     //=================================================================================================
-    // EMR
+    // EMR Insights
     //=================================================================================================
     val latestEmr = AwsEmr.latestRelease()
     val deployment = appContext.appInfo.runtime
     if (deployment.isRunningOnEmr && !deployment.release.contains(latestEmr)) {
       appContext.appInfo.insightsWarn("emr_version") = htmlTextWarning(
-        s"Your application might run faster using the latest EMR release available (${htmlBold(latestEmr)})"
+        s"The application might run faster using the latest EMR release available (${htmlBold(latestEmr)})"
       )
     }
 

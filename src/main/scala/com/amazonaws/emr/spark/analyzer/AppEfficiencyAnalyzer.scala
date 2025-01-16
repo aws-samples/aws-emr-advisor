@@ -3,7 +3,7 @@ package com.amazonaws.emr.spark.analyzer
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics
 import com.amazonaws.emr.spark.scheduler.JobOverlapHelper
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.Duration
@@ -12,7 +12,7 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
 
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
-    logInfo("Analyze efficiency...")
+    logger.info("Analyze efficiency...")
 
     // wall clock time, appEnd - appStart
     val appTotalTime = endTime - startTime
@@ -41,7 +41,7 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
     // We assume executors are only busy when one of the job is in progress
     val inJobComputeMillisAvailable = totalCores * jobTime
 
-    //sum of millis used by all tasks of all jobs
+    // sum of millis used by all tasks of all jobs
     val inJobComputeMillisUsed = appContext.jobMap.values
       .filter(x => x.endTime > 0)
       .filter(x => x.jobMetrics.map.isDefinedAt(AggTaskMetrics.executorRunTime))

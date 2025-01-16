@@ -1,29 +1,39 @@
-ThisBuild / version := "0.2.0-SNAPSHOT"
+ThisBuild / version := "0.3.0"
 ThisBuild / organization := "com.amazonaws.emr"
 ThisBuild / scalaVersion := "2.12.15"
 
+fork := true
 licenses += ("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0"))
 
 lazy val root = (project in file("."))
   .settings(
-    name := "aws-emr-insights"
+    name := "aws-emr-advisor"
   )
 
 // Dependencies
+val akkaVersion = "2.6.16"
+val akkaHttpVersion = "10.2.7"
+val apacheHttpVersion = "4.5.13"
 // make sure to respect binary compatibility between spark-core and json4s
 val awsSdkVersion = "2.20.86"
-val json4sVersion = "3.6.12"
+val json4sVersion = "3.7.0-M11"
 val hadoopVersion = "3.3.2"
-val sparkVersion = "3.4.1"
+val sparkVersion = "3.5.3"
 val scalaTestsVersion = "3.2.17"
 
 val LibScope = "provided"
-//val LibScope = "compile" // compile is used for local test
 
 libraryDependencies ++= Seq(
 
-  "org.apache.httpcomponents" % "httpmime" % "4.5.13" % LibScope,
-  "org.apache.httpcomponents" % "httpclient" % "4.5.13" % LibScope,
+  "org.apache.httpcomponents" % "httpmime" % apacheHttpVersion % LibScope,
+  "org.apache.httpcomponents" % "httpclient" % apacheHttpVersion % LibScope,
+
+  // Akka
+  "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion,
+  "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+  "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
+  "org.apache.logging.log4j"  %%  "log4j-api-scala" % "13.0.0",
+  "org.apache.logging.log4j" % "log4j-core" % "2.19.0" % Runtime,
 
   // Spark / Hadoop
   "org.apache.hadoop" % "hadoop-aws" % hadoopVersion,
@@ -33,6 +43,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion % LibScope,
 
   // AWS Services
+  "software.amazon.awssdk" % "ec2" % awsSdkVersion,
   "software.amazon.awssdk" % "emr" % awsSdkVersion,
   "software.amazon.awssdk" % "emrserverless" % awsSdkVersion,
   "software.amazon.awssdk" % "pricing" % awsSdkVersion,

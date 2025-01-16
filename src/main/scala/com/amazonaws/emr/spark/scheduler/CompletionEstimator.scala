@@ -2,7 +2,7 @@ package com.amazonaws.emr.spark.scheduler
 
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.timespan.{JobTimeSpan, StageTimeSpan}
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 
 import scala.collection.mutable
 
@@ -80,11 +80,11 @@ object CompletionEstimator extends Logging {
       }
     }
     if (completionRetries >= MAX_COMPLETION_TRIES) {
-      logInfo(s"ERROR: Estimation of job completion time aborted $completionRetries")
-      logInfo(s"runnableStages ${estate.runnableStages}")
-      logInfo(s"runningStages ${estate.runningStages}")
-      logInfo(s"waitingStages ${estate.waitingStages}")
-      logInfo(s"maxStageIDs $maxStageIDs")
+      logger.info(s"ERROR: Estimation of job completion time aborted $completionRetries")
+      logger.info(s"runnableStages ${estate.runnableStages}")
+      logger.info(s"runningStages ${estate.runningStages}")
+      logger.info(s"waitingStages ${estate.waitingStages}")
+      logger.info(s"maxStageIDs $maxStageIDs")
       0L
     } else {
       scheduler.wallClockTime()

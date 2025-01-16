@@ -1,10 +1,10 @@
 package org.apache.spark.utils
 
-import org.apache.spark.scheduler.ReplayListenerBus
-import org.apache.spark.util.JsonProtocol
-import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
 import com.fasterxml.jackson.core.JsonParseException
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
+import org.apache.spark.scheduler.ReplayListenerBus
 import org.apache.spark.scheduler.ReplayListenerBus.ReplayEventsFilter
+import org.apache.spark.util.JsonProtocol
 
 /**
  * Custom `ReplayListenerBus` class to parallelize EventLog processing using streams
@@ -22,7 +22,7 @@ class CustomReplayListenerBus extends ReplayListenerBus {
       case _: JsonParseException =>
       //logWarning(s"Got JsonParseException log: $line")
       case t: Throwable =>
-      logWarning(s"Ignore error at: $line, ${t.getMessage}")
+        logWarning(s"Ignore error at: $line, ${t.getMessage}")
     }
     true
   }

@@ -2,14 +2,12 @@ package com.amazonaws.emr.api
 
 import com.amazonaws.emr.Config.{EmrOnEc2MinStorage, EmrOnEksNodeMinStorage}
 import com.amazonaws.emr.api.AwsPricing.ArchitectureType.ArchitectureType
-import com.amazonaws.emr.api.AwsPricing.{EmrContainersPrice, EmrInstance, VolumeType}
+import com.amazonaws.emr.api.AwsPricing.{EmrContainersPrice, EmrInstance, EmrServerlessPrice, VolumeType}
 import com.amazonaws.emr.spark.models.runtime.ResourceRequest
 import com.amazonaws.emr.utils.Formatter.{asGB, byteStringAsBytes, toGB}
 import software.amazon.awssdk.regions.Region
 
-/**
- * Helper functions to compute AWS Service Costs
- */
+/*  Helper functions to compute AWS Service Costs */
 object AwsCosts {
 
   private val CostsDigits = "6"
@@ -23,11 +21,32 @@ object AwsCosts {
     val region: String
   }
 
-  case class EmrOnEc2Cost(total: Double, emr: Double, hardware: Double, storage: Double, region: String = Region.US_EAST_1.toString, spotDiscount: Double = 0.0) extends EmrCosts
+  case class EmrOnEc2Cost(
+    total: Double,
+    emr: Double,
+    hardware: Double,
+    storage: Double,
+    region: String = Region.US_EAST_1.toString,
+    spotDiscount: Double = 0.0
+  ) extends EmrCosts
 
-  case class EmrOnEksCost(total: Double, emr: Double, hardware: Double, storage: Double, region: String = Region.US_EAST_1.toString, spotDiscount: Double = 0.0) extends EmrCosts
+  case class EmrOnEksCost(
+    total: Double,
+    emr: Double,
+    hardware: Double,
+    storage: Double,
+    region: String = Region.US_EAST_1.toString,
+    spotDiscount: Double = 0.0
+  ) extends EmrCosts
 
-  case class EmrServerlessCost(total: Double, cpu: Double, memory: Double, storage: Double, region: String = Region.US_EAST_1.toString, spotDiscount: Double = 0.0) extends EmrCosts {
+  case class EmrServerlessCost(
+    total: Double,
+    cpu: Double,
+    memory: Double,
+    storage: Double,
+    region: String = Region.US_EAST_1.toString,
+    spotDiscount: Double = 0.0
+  ) extends EmrCosts {
     override val emr: Double = cpu + memory
     override val hardware: Double = 0.0 //
   }
@@ -108,9 +127,11 @@ object AwsCosts {
     totVCpu: Int,
     totMemGB: Int,
     totStorageGB: Int,
-    region: String = Region.US_EAST_1.toString): EmrServerlessCost = {
+    pricing: List[EmrServerlessPrice],
+    region: String = Region.US_EAST_1.toString
+  ): EmrServerlessCost = {
 
-    val serviceCosts = AwsPricing.getEmrServerlessPrice(region).filter(_.arch == arch).head
+    val serviceCosts = pricing.filter(_.arch == arch).head
     val cpuCosts = serviceCosts.CPUHoursPrice * totVCpu * runtimeHrs
     val memCosts = serviceCosts.GBHoursPrice * totMemGB * runtimeHrs
     val storageCosts = serviceCosts.storagePrice * totStorageGB * runtimeHrs

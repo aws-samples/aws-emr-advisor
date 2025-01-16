@@ -1,9 +1,17 @@
 package com.amazonaws.emr.report
 
-trait HtmlPage {
+trait HtmlPage extends HtmlBase {
 
-  val CssTableStyle = "table-bordered table-striped table-sm"
+  def content: String
 
-  def render: String
+  def pageId: String
+
+  def pageName: String
+
+  def pageIcon: String = ""
+
+  def isActive: Boolean = false
+
+  def subSection: String = ""
 
 }

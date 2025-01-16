@@ -40,7 +40,6 @@ class AppEfficiency {
 
   var executorsMaxTaskMemory = 0L
   var executorsTasksPerSecond = 0.0
-  var executorsTasksPerSecondSingle = 0.0
   var executorCoreMemoryRatio = 0L
 
 }

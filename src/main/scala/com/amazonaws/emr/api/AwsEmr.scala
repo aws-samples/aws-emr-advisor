@@ -2,10 +2,12 @@ package com.amazonaws.emr.api
 
 import com.amazonaws.emr.Config
 import com.amazonaws.emr.utils.Constants.NotAvailable
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.ec2.Ec2Client
+import software.amazon.awssdk.services.ec2.model.{DescribeSubnetsRequest, Subnet}
 import software.amazon.awssdk.services.emr.EmrClient
-import software.amazon.awssdk.services.emr.model.{DescribeReleaseLabelRequest, ListReleaseLabelsRequest}
+import software.amazon.awssdk.services.emr.model._
 import software.amazon.awssdk.services.emrserverless.EmrServerlessClient
 import software.amazon.awssdk.services.emrserverless.model._
 
@@ -96,10 +98,51 @@ object AwsEmr extends Logging {
         .head
     } catch {
       case _: Throwable =>
-        logWarning(s"Cannot find any valid application for this JobRunId: $jobRunId ($region)")
+        logger.warn(s"Cannot find any valid application for JobRunId: $jobRunId ($region)")
         None
     }
 
+  }
+
+  /**
+   * Return the list of instances in the cluster
+   *
+   * @param clusterId
+   * @param region
+   * @return
+   */
+  def listInstances(clusterId: String, region: Region = Region.US_EAST_1): List[Instance] = {
+    val client = EmrClient.builder.region(region).build
+    val request = ListInstancesRequest.builder.clusterId(clusterId).build()
+    try {
+      client.listInstances(request)
+        .instances()
+        .asScala
+        .toList
+    } catch {
+      case _: Throwable =>
+        logger.error(s"Cannot retrieve instances for cluster: $clusterId ($region)")
+        Nil
+    }
+  }
+
+  /**
+   * Describe an EMR EC2 cluster
+   *
+   * @param clusterId
+   * @param region
+   * @return
+   */
+  def describeEc2Cluster(clusterId: String, region: Region = Region.US_EAST_1): Cluster = {
+    val client = EmrClient.builder.region(region).build
+    val request = DescribeClusterRequest.builder().clusterId(clusterId).build()
+    client.describeCluster(request).cluster()
+  }
+
+  def describeSubnet(subnetId: String, region: Region = Region.US_EAST_1): List[Subnet] = {
+    val client = Ec2Client.builder().region(region).build()
+    val request = DescribeSubnetsRequest.builder().subnetIds(subnetId).build()
+    client.describeSubnets(request).subnets().asScala.toList
   }
 
 }

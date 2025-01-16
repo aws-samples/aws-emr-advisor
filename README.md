@@ -1,118 +1,60 @@
 # Amazon EMR Advisor
-Started as fork of [Qubole SparkLens](https://github.com/qubole/sparklens), this tool can be used to analyze Spark 
-Event Logs to generate insights and costs recommendations using different deployment options for Amazon EMR.
 
-The tool generates an HTML report that can be stored locally or on Amazon S3 bucket for a quick review.
+Originally developed as a fork of [Qubole SparkLens](https://github.com/qubole/sparklens), this tool analyzes Spark Event Logs to provide insights and cost optimization recommendations across various deployment options for Amazon EMR.
 
-## Requirements
-- sbt
-- Apache Spark
-- AWS Credentials
+It generates an HTML report, which can be saved locally or uploaded to an Amazon S3 bucket for easy access and quick review.
 
-**Note** If you want to process Spark Event logs stored in an S3 bucket, make sure to add the hadoop-aws libraries in 
-the Spark jar path
+## History
 
-**Note** In order to create and store reports on S3, you must have valid AWS Credentials. For example, an IAM role
-with following permissions if you run this tool on an EC2 instance, or you can configure AWS programmatic keys on your local 
-computer using the AWS CLI
-
-```
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "s3:ListBucket",
-                "s3:GetObject",
-                "s3:PutObject"
-            ],
-            "Resource": [
-                "arn:aws:s3:::<your-bucket>",
-                "arn:aws:s3:::<your-bucket>/*"
-            ]
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "elasticmapreduce:ListReleaseLabels",
-                "elasticmapreduce:DescribeReleaseLabel"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": "pricing:GetProducts",
-            "Resource": "*"
-        }
-    ]
-}
-```
+- 2025/01 Release (v0.3.0): New Report UI and bug fix
+- 2024/08 Release (v0.2.0): Spark Event Log Analysis with EMR deployment recommendations
 
 ## Usage
 
-1. Compile and build the package
+### Requirements
+
+- sbt
+- Apache Spark
+- AWS Account
+
+**Note** To process Spark Event Logs stored in an S3 bucket, ensure that the `hadoop-aws` libraries are included in the Spark jar path when running the tool on your local machine.
+
+**Note** The application uses AWS services to retrieve additional information (e.g. pricing) to generate the recommendations. Please make sure you have the required [IAM Permissions](./IamPermissions.md) when running the application.
+
+### Build
+
+Compile and build the package locally
 
 ```bash
 sbt clean compile assembly
 ```
 
-2. On an EMR on EC2 or Spark cluster, launch the application using `spark-submit` command
+To build the package on an EMR on EC2 (release >= 7.6.0) cluster: 
 
 ```bash
-usage: spark-submit --deploy-mode client --class com.amazonaws.emr.SparkLogsAnalyzer <APP_JAR> [--bucket BUCKET] [--duration DURATION] [--max-executors MAX-EXECUTORS] [--region REGION] [--spot SPOT] <SPARK_LOG>
+# requirements
+sudo wget https://www.scala-sbt.org/sbt-rpm.repo -O /etc/yum.repos.d/sbt-rpm.repo
+sudo yum -y install git sbt
 
-  APP_JAR                   Insights jar path
-  BUCKET                    Amazon S3 bucket to persist HTML reports (e.g my.bucket.name)
-  DURATION                  Time duration expected for the job (e.g 15m)
-  MAX-EXECUTORS             Maximum number of executors to use in simulations
-  REGION                    AWS Region to lookup for costs (e.g. us-east-1)
-  SPOT                      Specify spot discount when computing ec2 costs (e.g. 0.7)
-  SPARK_LOG                 Spark event logs path. Can process files or directories stored in S3 (s3://), HDFS (hdfs://), or local fs
+# clone repo and build
+git clone https://github.com/aws-samples/aws-emr-advisor && cd aws-emr-advisor
+sbt clean compile assembly
 ```
 
-### Public jar file
+### Analyze
 
-For easier access, there is a public jar file available at S3.  For example, for version 0.2.0-SNAPSHOT, the file path to jar file is `s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
+Run the application on an EMR on EC2 or Spark cluster using the `spark-submit` command. For specific examples, refer to the corresponding [documentation](./docs/spark.md) pages.
 
-To run with `spark-submit`,  include the application jar file as below (version 0.2.0-SNAPSHOT as an example)
-```
-s3://awslabs-code-us-east-1/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar
-```
-The jar file can also be downloaded at `https://awslabs-code-us-east-1.s3.amazonaws.com/EMRAdvisor/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar`.
+- [WIP - Cluster Report](./docs/cluster.md)
+- [Spark Report](./docs/spark.md)
 
-### Example - Generate HTML report from a sample spark event log
+## Example Reports
 
-```bash
-spark-submit --deploy-mode client --class com.amazonaws.emr.SparkLogsAnalyzer \
-  target/scala-2.12/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar \
-  ./src/test/resources/job_spark_pi
-```
+Here are some example reports generated when using the tool.
 
-To store the report in an Amazon S3 bucket, specify the `--bucket` parameter as well as `--duration` for expected runtime. The tool stores the report on the S3 bucket and generates a pre-signed URL to easily access the report in the browser. For example,
+### Spark Report - EMR Deployment Details
 
-```bash
-spark-submit --deploy-mode client --class com.amazonaws.emr.SparkLogsAnalyzer \
-  target/scala-2.12/aws-emr-insights-assembly-0.2.0-SNAPSHOT.jar \
-  --bucket YOUR_BUCKET_NAME \
-  --duration 10m \
-  ./src/test/resources/job_spark_pi
-```
-
-## Report
-The generated report provides a summary of the Spark Application
-![image info](docs/images/SummaryApplicaitonPage.png)
-
-Insight Tab provides more details and insights 
-![image info](docs/images/SummaryInsightsPage.png)
-
-Three types of recommendations are provided:
-* Optimized for **runtime**: improve runtime by increasing parallelism
-* Optimized for **cost**: improve cost by increasing resource utilization
-* SLA based (**runtime capped**): balance cost and runtime based on the expected runtime specified by `--duration`  
-
-
-![image info](docs/images/RecRuntimeCapDepolyments.png)
+![image info](docs/images/spark_env_details.png)
 
 ## Security
 
@@ -120,5 +62,4 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
-
+This library is licensed under the MIT-0 License. See the [LICENSE](./LICENSE) file.

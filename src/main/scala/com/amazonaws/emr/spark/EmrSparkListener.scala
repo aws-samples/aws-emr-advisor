@@ -2,13 +2,13 @@ package com.amazonaws.emr.spark
 
 import com.amazonaws.emr.spark.models.{AppConfigs, AppContext, AppInfo, AppMetrics}
 import com.amazonaws.emr.spark.models.timespan.{ExecutorTimeSpan, HostTimeSpan, JobTimeSpan, StageTimeSpan}
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 import org.apache.spark.scheduler._
 
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
 
-class EmrSparkListener() extends SparkListener with Logging {
+class EmrSparkListener extends SparkListener with Logging {
 
   private val appInfo = new AppInfo
   private val appConfigs = new AppConfigs
@@ -54,7 +54,8 @@ class EmrSparkListener() extends SparkListener with Logging {
           val stageTimeSpan = stageMap(stageId)
           jobTimeSpan.updateAggregateTaskMetrics(stageTimeSpan.stageMetrics)
         } catch {
-          case e: Throwable => logWarning(s"Can't finalize stageId: $stageId")
+          case e: Throwable =>
+            logger.warn(s"Can't finalize stageId: $stageId")
             e.printStackTrace()
         }
       }
@@ -68,7 +69,8 @@ class EmrSparkListener() extends SparkListener with Logging {
           jobTimeSpan.addStage(stageTimeSpan)
           stageTimeSpan.finalUpdate()
         } catch {
-          case e: Throwable => logWarning(s"Can't finalize stageId: $stageId")
+          case e: Throwable =>
+            logger.warn(s"Can't finalize stageId: $stageId")
             e.printStackTrace()
         }
       }

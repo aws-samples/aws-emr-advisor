@@ -2,9 +2,25 @@ package com.amazonaws.emr
 
 object Config {
 
+  val AppName = "EMR Advisor"
+  val AppNamePrefix = "emr-advisor"
+  val ResourceAppLogoPath = "/logo.png"
+
   // validity of a s3 pre-signed url in minutes
   // default: 1 day == 1440 minutes
   val S3PreSignedUrlValidity = 1440
+
+  // ===================================================
+  // Cluster Advisor Configurations
+  // ===================================================
+  val EmrExtraInstanceData = "/emr/instance-controller/lib/info/extraInstanceData.json"
+  val EmrInstanceControllerInfo = "/emr/instance-controller/lib/info/job-flow.json"
+
+  val EmrLongRunningClusterDaysThreshold: Long = 4L
+
+  // ===================================================
+  // Spark Advisor Configurations
+  // ===================================================
 
   // Emr avg. startup times
   val EmrOnEc2ProvisioningMs: Long = 210000 // ca. 3 minutes 30 seconds with only spark installed, no BA
@@ -15,7 +31,7 @@ object Config {
   val EmrOnEc2ClusterMinNodes = 1
   val EmrOnEc2MinStorage = "32g"
   val EmrOnEc2MaxContainersPerInstance = 4
-  val EmrOnEc2ReservedOsMemoryGb = "5g"
+  val EmrOnEc2ReservedOsMemoryGb = "4g"
 
   val EmrOnEksNodeMinStorage = "10g"
   val EmrOnEksMaxPodsPerInstance = 4
@@ -50,15 +66,14 @@ object Config {
   val SparkMaxDriverCores = 4
   val SparkMaxDriverMemory = "60gb"
   val SparkInstanceFamilies: Seq[String] = List("m", "c", "r", "d")
+  val SparkNvmeThreshold = "100g"
 
   // Executors Simulations
 
   // time reduction in percentage
   val ExecutorsMaxDropLoss: Double = 5.0
-  // Upper bound for the number of executors
+  // Maximum number of simulations for executors
   val ExecutorsMaxTestsCount: Int = 500
-
-  // cost range
-  val ExecutorsMaxCostRange: Double = 0.05 // TODO: configurable
+  val ExecutorsMaxVisibleTestsCount = 20
 
 }

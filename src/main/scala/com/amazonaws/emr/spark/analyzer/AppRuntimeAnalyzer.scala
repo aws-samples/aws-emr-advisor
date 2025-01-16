@@ -1,13 +1,11 @@
 package com.amazonaws.emr.spark.analyzer
 
-import com.amazonaws.emr.utils.Constants.NotAvailable
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.runtime._
-import com.amazonaws.emr.utils.Constants.DefaultRegion
-import com.amazonaws.emr.utils.Constants.ParamRegion
+import com.amazonaws.emr.utils.Constants.{DefaultRegion, NotAvailable, ParamRegion}
 import com.amazonaws.services.costandusagereport.model.AWSRegion
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
 import org.apache.spark.utils.SparkHelper.parseSparkCmd
 import software.amazon.awssdk.regions.Region
 
@@ -15,7 +13,7 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
 
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
-    logInfo("Analyze Deployment Runtime...")
+    logger.info("Analyze Deployment Runtime...")
 
     val sparkVersion = appContext.appConfigs.sparkVersion
 
@@ -75,12 +73,13 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
     // Parse Submitted application
     val cmd = appContext.appConfigs.systemConfigs.get("sun.java.command")
     if (cmd.nonEmpty) {
-      
+
       // quick fix for when lakeformation.enabled parameter is not correct in Java command
-      val cmdStr=cmd.get.replace("spark.emr-serverless.lakeformation.enabled=",
-                    "spark.emr-serverless.lakeformation.enabled=false")  
-      
+      val cmdStr = cmd.get.replace("spark.emr-serverless.lakeformation.enabled=",
+        "spark.emr-serverless.lakeformation.enabled=false")
+
       appContext.appInfo.sparkCmd = Some(parseSparkCmd(cmdStr))
+
     }
   }
 

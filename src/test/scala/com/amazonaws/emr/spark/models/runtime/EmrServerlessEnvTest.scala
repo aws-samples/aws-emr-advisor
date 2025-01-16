@@ -28,6 +28,7 @@ class EmrServerlessEnvTest extends AnyFunSuiteLike {
     assert(findWorkerByCpuMemory(32, memory240Gb).equals(WorkerNode(16, memory120Gb, 0L)))
     assert(findWorkerByCpuMemory(32, memory1Gb).equals(WorkerNode(16, memory32Gb, 0L)))
     assert(findWorkerByCpuMemory(1, memory240Gb).equals(WorkerNode(16, memory120Gb, 0L)))
+    assert(findWorkerByCpuMemory(16, memory2Gb).equals(WorkerNode(16, memory32Gb, 0L)))
 
   }
 

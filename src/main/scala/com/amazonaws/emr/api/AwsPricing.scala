@@ -41,21 +41,24 @@ object AwsPricing {
     "16xlarge" -> EbsSpec(4, 256, 1024),
     "18xlarge" -> EbsSpec(4, 288, 1152),
     "24xlarge" -> EbsSpec(4, 384, 1536),
-    "default" -> EbsSpec(4, 128, 512))
+    "default" -> EbsSpec(4, 128, 512)
+  )
 
-  case class EmrServerlessPrice
-  (arch: ArchitectureType,
+  case class EmrServerlessPrice(
+    arch: ArchitectureType,
     CPUHoursPrice: Double,
     GBHoursPrice: Double,
-    storagePrice: Double)
+    storagePrice: Double
+  )
 
-  case class EmrContainersPrice
-  (compute: ComputeType,
+  case class EmrContainersPrice(
+    compute: ComputeType,
     GBHoursPrice: Double,
-    CPUHoursPrice: Double)
+    CPUHoursPrice: Double
+  )
 
-  case class EmrInstance
-  (instanceType: String,
+  case class EmrInstance(
+    instanceType: String,
     instanceFamily: String,
     currentGeneration: Boolean,
     vCpu: Int,
@@ -66,15 +69,17 @@ object AwsPricing {
     networkBandwidthGbps: Int,
     yarnMaxMemoryMB: Int,
     ec2Price: Double,
-    emrPrice: Double)
+    emrPrice: Double
+  )
 
-  private case class EmrInstancePrice
-  (instanceType: String,
+  private case class EmrInstancePrice(
+    instanceType: String,
     instanceFamily: String,
-    price: Double)
+    price: Double
+  )
 
-  private case class Ec2InstancePrice
-  (instanceType: String,
+  private case class Ec2InstancePrice(
+    instanceType: String,
     instanceFamily: String,
     memoryGiB: Int,
     vCpu: Int,
@@ -84,33 +89,27 @@ object AwsPricing {
     volumeType: VolumeType,
     volumeNumber: Int,
     volumeSizeGB: Int,
-    networkBandwidthGbps: Int)
+    networkBandwidthGbps: Int
+  )
 
-  case class EbsPrice
-  (volumeType: String,
-    price: Double)
+  case class EbsPrice(
+    volumeType: String,
+    price: Double
+  )
 
   object ArchitectureType extends Enumeration {
     type ArchitectureType = Value
-    val
-    X86_64,
-    ARM64 = Value
+    val X86_64, ARM64 = Value
   }
 
   object ComputeType extends Enumeration {
     type ComputeType = Value
-    val
-    EC2,
-    FARGATE = Value
+    val EC2, FARGATE = Value
   }
 
   object VolumeType extends Enumeration {
     type VolumeType = Value
-    val
-    EBS,
-    NVME,
-    SSD,
-    HDD = Value
+    val EBS, NVME, SSD, HDD = Value
   }
 
   // Pricing API only available in US_EAST_1
@@ -254,7 +253,9 @@ object AwsPricing {
         case x if x.toLowerCase.contains("nvme") => VolumeType.NVME
         case x if x.toLowerCase.contains("ssd") => VolumeType.SSD
         case x if x.toLowerCase.contains("hdd") => VolumeType.HDD
-        case _ => throw new RuntimeException(s"Storage Type not detected for ${e.product.attributes.instanceType}")
+        case _ =>
+          if (e.product.attributes.instanceFamily.equalsIgnoreCase("storage optimized")) VolumeType.NVME
+          else VolumeType.EBS
       }
 
       // For EBS volumes we use the EMR Defaults

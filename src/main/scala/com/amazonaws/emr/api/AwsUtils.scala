@@ -1,13 +1,12 @@
 package com.amazonaws.emr.api
 
-import com.amazonaws.auth.AWSCredentialsProviderChain
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
+import com.amazonaws.auth.{AWSCredentialsProviderChain, DefaultAWSCredentialsProviderChain}
 import com.amazonaws.emr.Config.S3PreSignedUrlValidity
-import org.apache.spark.internal.Logging
+import org.apache.logging.log4j.scala.Logging
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.{S3Exception, GetObjectRequest, PutObjectRequest}
+import software.amazon.awssdk.services.s3.model.{GetObjectRequest, PutObjectRequest, S3Exception}
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 
@@ -31,7 +30,7 @@ object AwsUtils extends Logging {
       val putOb = PutObjectRequest.builder.bucket(bucketName).key(objectKey).build
       client.putObject(putOb, RequestBody.fromFile(new File(objectPath)))
     } catch {
-      case e: S3Exception => logError(e.getMessage)
+      case e: S3Exception => logger.error(e.getMessage)
     }
   }
 
@@ -55,7 +54,7 @@ object AwsUtils extends Logging {
       preSignedGetObjectRequest.url.toString
     } catch {
       case e: S3Exception =>
-        logError(e.getMessage)
+        logger.error(e.getMessage)
         ""
     }
   }
@@ -64,11 +63,11 @@ object AwsUtils extends Logging {
     val credentialsProviderChain: AWSCredentialsProviderChain = new DefaultAWSCredentialsProviderChain()
     try {
       val awsCredentials = credentialsProviderChain.getCredentials
-      println(s"Found valid AWS credentials")
+      logger.debug(s"Found valid AWS credentials")
       true
     } catch {
       case _: Exception =>
-        println("Error: Unable to load AWS credentials from any provider in the chain")
+        logger.error("Error: Unable to load AWS credentials from any provider in the chain")
         false
     }
   }

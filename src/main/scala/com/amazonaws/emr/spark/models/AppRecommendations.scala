@@ -1,34 +1,24 @@
 package com.amazonaws.emr.spark.models
 
-import com.amazonaws.emr.spark.analyzer.AppRuntimeEstimate
+import com.amazonaws.emr.spark.analyzer.SimulationWithCores
 import com.amazonaws.emr.spark.models.OptimalTypes.OptimalType
-import com.amazonaws.emr.spark.models.runtime.{SparkRuntime, EmrEnvironment}
+import com.amazonaws.emr.spark.models.runtime.Environment.EnvironmentName
+import com.amazonaws.emr.spark.models.runtime.{EmrEnvironment, SparkRuntime}
 
-import scala.collection.SortedMap
 import scala.collection.mutable
 
 object OptimalTypes extends Enumeration {
   type OptimalType = Value
-
-  val TimeOpt,
-  CostOpt,
-  TimeCapped,
-  CostCapped= Value
+  val TimeOpt, CostOpt, UserDefinedOpt: OptimalType = Value
 }
+
 class AppRecommendations {
 
   var currentSparkConf: Option[SparkRuntime] = None
-  
-  val sparkConfs= mutable.HashMap[OptimalType, SparkRuntime]()
+  val recommendations: mutable.Map[EnvironmentName, mutable.Map[OptimalType, EmrEnvironment]] =
+    mutable.HashMap.empty
+  var simulations: Option[Seq[SimulationWithCores]] = None
 
-  val emrOnEc2Envs= mutable.HashMap[OptimalType, EmrEnvironment]()
-  val emrOnEksEnvs= mutable.HashMap[OptimalType, EmrEnvironment]()
-  val emrServerlessEnvs= mutable.HashMap[OptimalType, EmrEnvironment]()
-
-  // contains simulations of application runtime using `optimalSparkConf`
-  // contains number of executor and estimated runtime in ms
-  var executorSimulations: Option[SortedMap[Int, AppRuntimeEstimate]] = None
-
-  val additionalInfo = mutable.HashMap[OptimalType, mutable.HashMap[String, String]]()
-
+  def getRecommendations(env: EnvironmentName): mutable.Map[OptimalType, EmrEnvironment] =
+    recommendations.getOrElse(env, mutable.HashMap.empty)
 }

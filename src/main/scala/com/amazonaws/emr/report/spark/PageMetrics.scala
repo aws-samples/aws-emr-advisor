@@ -1,12 +1,11 @@
 package com.amazonaws.emr.report.spark
 
 import com.amazonaws.emr.report.HtmlPage
-import com.amazonaws.emr.report.HtmlReport.{htmlBoxInfo, htmlNavTabs, htmlTable, htmlTablePaginated}
-import com.amazonaws.emr.spark.models.{AppEfficiency, AppMetrics, AppSparkExecutors}
-import com.amazonaws.emr.spark.models.metrics.{AggExecutorMetrics, AggTaskMetrics}
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics._
+import com.amazonaws.emr.spark.models.metrics.{AggExecutorMetrics, AggTaskMetrics}
 import com.amazonaws.emr.spark.models.timespan.JobTimeSpan
-import com.amazonaws.emr.utils.Formatter.{humanReadableBytes, pcm, printDate, printDuration, printTime}
+import com.amazonaws.emr.spark.models.{AppEfficiency, AppMetrics, AppSparkExecutors}
+import com.amazonaws.emr.utils.Formatter._
 
 import scala.util.Try
 
@@ -14,9 +13,67 @@ class PageMetrics(
   appMetrics: AppMetrics,
   jobMap: Map[Long, JobTimeSpan],
   appSparkExecutors: AppSparkExecutors,
-  appEfficiency: AppEfficiency) extends HtmlPage {
+  appEfficiency: AppEfficiency
+) extends HtmlPage {
 
-  def taskTab: String = {
+  override def pageId: String = "metrics"
+
+  override def pageIcon: String = "clipboard-data-fill"
+
+  override def pageName: String = "Metrics"
+
+  override def content: String = {
+    val htmlTabs = Seq(
+      ("execMetrics", "Executors", execTab),
+      ("jobsMetrics", "Jobs", jobsTab),
+      ("taskMetrics", "Tasks", taskTab)
+    )
+    htmlNavTabs("metricsTabs", htmlTabs, "execMetrics", "nav-pills border navbar-light bg-light", "mt-3 text-break")
+  }
+
+  private def executorsTable: String = {
+
+    val data = appSparkExecutors.executors.toSeq.sortBy(x => Try(x._2.executorID.toInt).getOrElse(0)).map { x =>
+
+      // time
+      val adjustedStartTime = if (x._2.startTime > 0) x._2.startTime else x._2.endTime
+      val adjustedStartTimeString = if (x._2.startTime > 0) printTime(adjustedStartTime) else "N/A"
+      val adjustedStartDateString = if (x._2.startTime > 0) printDate(adjustedStartTime) else ""
+      val activeDuration = x._2.endTime - adjustedStartTime
+      val launchDuration = adjustedStartTime - x._2.executorInfo.requestTime.getOrElse(adjustedStartTime)
+      // memory
+      val peakJvmMemoryOnHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMHeapMemory)
+      val peakJvmMemoryOffHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMOffHeapMemory)
+
+      List(
+        x._2.executorID,
+        x._2.hostID,
+        s"""<div class="">${adjustedStartTimeString}</div><div class="fw-light">${adjustedStartDateString}</div>""",
+        s"""<div class="">${printTime(x._2.endTime)}</div><div class="fw-light">${printDate(x._2.endTime)}</div>""",
+        printDuration(launchDuration),
+        printDuration(activeDuration),
+        x._2.executorInfo.totalCores,
+        s"${humanReadableBytes(peakJvmMemoryOnHeap)} / ${humanReadableBytes(peakJvmMemoryOffHeap)}",
+        x._2.executorTaskMetrics.failedTasks,
+        x._2.executorTaskMetrics.completedTasks,
+        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(inputBytesRead)),
+        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(outputBytesWritten)),
+        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(shuffleReadBytesRead)),
+        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(shuffleWriteBytesWritten))
+      ).map(_.toString)
+    }.toList
+
+    val header = List(
+      "Executor ID", "Address", "Started", "Terminated", "Launch Time", "Active Time", "Cores",
+      "Peak JVM Memory OnHeap / OffHeap", "Failed Tasks", "Completed Tasks", "Input", "Output",
+      "Shuffle Read", "Shuffle Write"
+    )
+
+    htmlTablePaginated("executorTable", header, data, "table-bordered table-striped text-center mt-3")
+
+  }
+
+  private def taskTab: String = {
     val ioTable = htmlTable(
       List("Name", "Sum", "Min", "Mean", "Max"),
       appMetrics.appAggMetrics.getIOMetrics, CssTableStyle)
@@ -56,7 +113,7 @@ class PageMetrics(
        |""".stripMargin
   }
 
-  def execTab: String = {
+  private def execTab: String = {
 
     val runtimeTable = htmlTable(
       List("Name", "Runtime", "Percentage"),
@@ -85,13 +142,15 @@ class PageMetrics(
 
     s"""<div class="metrics mt-3">
        |  <div class="row">
-       |    <div class="col-3">
+       |    <div class="col-6">
        |      $runtimeTable
        |    </div>
-       |    <div class="col-3">
+       |    <div class="col-6">
        |      $executorMemoryTable
        |    </div>
-       |    <div class="col-6">
+       |  </div>
+       |  <div class="row">
+       |    <div class="col-12">
        |      $estimatedTable
        |    </div>
        |  </div>
@@ -101,7 +160,7 @@ class PageMetrics(
        |""".stripMargin
   }
 
-  def jobsTab: String = {
+  private def jobsTab: String = {
     val jobs = jobMap.toList.sortBy(_._2.duration.getOrElse(0L)).reverse
     val jobsData = jobs.map { j =>
       List(
@@ -116,57 +175,6 @@ class PageMetrics(
     htmlTablePaginated("jobsMetrics",
       List("Job Id", "Duration", "Stages", "Tasks", "Avg Task Duration", "Max Task Duration"),
       jobsData, "table-bordered table-striped table-sm jobs mt-3", List("Duration", "Avg Task Duration", "Max Task Duration"))
-  }
-
-  override def render: String = {
-    val htmlTabs = Seq(
-      ("execMetrics", "Executors", execTab),
-      ("jobsMetrics", "Jobs", jobsTab),
-      ("taskMetrics", "Tasks", taskTab)
-    )
-    htmlNavTabs("metricsTabs", htmlTabs, "execMetrics", "nav-pills border navbar-light bg-light", "mt-4 text-break")
-  }
-
-  private def executorsTable: String = {
-
-    val data = appSparkExecutors.executors.toSeq.sortBy(x => Try(x._2.executorID.toInt).getOrElse(0)).map { x =>
-
-      // time
-      val adjustedStartTime = if(x._2.startTime > 0) x._2.startTime else x._2.endTime 
-      val adjustedStartTimeString = if(x._2.startTime > 0) printTime(adjustedStartTime) else "N/A"
-      val adjustedStartDateString = if(x._2.startTime > 0) printDate(adjustedStartTime) else ""
-      val activeDuration = x._2.endTime - adjustedStartTime
-      val launchDuration = adjustedStartTime - x._2.executorInfo.requestTime.getOrElse(adjustedStartTime)
-      // memory
-      val peakJvmMemoryOnHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMHeapMemory)
-      val peakJvmMemoryOffHeap = x._2.executorMetrics.getMetricMax(AggExecutorMetrics.JVMOffHeapMemory)
-
-      List(
-        x._2.executorID,
-        x._2.hostID,
-        s"""<div class="">${adjustedStartTimeString}</div><div class="fw-light">${adjustedStartDateString}</div>""",
-        s"""<div class="">${printTime(x._2.endTime)}</div><div class="fw-light">${printDate(x._2.endTime)}</div>""",
-        printDuration(launchDuration),
-        printDuration(activeDuration),
-        x._2.executorInfo.totalCores,
-        s"${humanReadableBytes(peakJvmMemoryOnHeap)} / ${humanReadableBytes(peakJvmMemoryOffHeap)}",
-        x._2.executorTaskMetrics.failedTasks,
-        x._2.executorTaskMetrics.completedTasks,
-        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(inputBytesRead)),
-        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(outputBytesWritten)),
-        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(shuffleReadBytesRead)),
-        humanReadableBytes(x._2.executorTaskMetrics.getMetricSum(shuffleWriteBytesWritten))
-      ).map(_.toString)
-    }.toList
-
-    val header = List(
-      "Executor ID", "Address", "Started", "Terminated", "Launch Time", "Active Time", "Cores",
-      "Peak JVM Memory OnHeap / OffHeap", "Failed Tasks", "Completed Tasks", "Input", "Output",
-      "Shuffle Read", "Shuffle Write"
-    )
-
-    htmlTablePaginated("executorTable", header, data, "table-bordered table-striped text-center mt-3")
-
   }
 
 }

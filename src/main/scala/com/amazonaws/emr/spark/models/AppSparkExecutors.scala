@@ -100,9 +100,13 @@ class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], val appCon
   def isMemoryIntensive: Boolean = getMaxTaskMemoryUsed >= byteStringAsBytes(Config.MemoryIntensiveMinMemory)
 
   def summary: String =
-    s"""The application launched <b>$executorsLaunched</b> executors in total. Maximum number of concurrent
+    s"""The application launched a total of <b>$executorsLaunched</b> Spark executors Maximum number of concurrent
        |executors was <b>$executorsMaxRunning</b>, for a total of <b>$executorsTotalCores</b> cores and
        |<b>${humanReadableBytes(executorsTotalMemory)}</b> memory""".stripMargin
+
+  def summaryResources: String =
+    s"""Maximum number of concurrent executors was <b>$executorsMaxRunning</b>, for a total of
+       |<b>$executorsTotalCores</b> cores and <b>${humanReadableBytes(executorsTotalMemory)}</b> memory""".stripMargin
 
   def getOnlyExecutors: Map[String, ExecutorTimeSpan] = executors
     .filter(!_._1.equalsIgnoreCase("driver"))

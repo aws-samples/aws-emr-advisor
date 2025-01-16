@@ -1,29 +1,35 @@
 package com.amazonaws.emr.spark.models.runtime
 
-import com.amazonaws.emr.Config.{EbsDefaultStorage, EmrOnEksAccountId, EmrOnEksNodeMinStorage, EmrOnEksProvisioningMs}
-import com.amazonaws.emr.utils.Constants.LinkEmrOnEksKarpenterDoc
+import com.amazonaws.emr.Config._
 import com.amazonaws.emr.api.AwsCosts.EmrOnEksCost
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.api.AwsPricing.EmrInstance
-import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toGB}
-import com.amazonaws.emr.report.HtmlReport._
+import com.amazonaws.emr.report.HtmlBase
 import com.amazonaws.emr.spark.models.AppInfo
+import com.amazonaws.emr.utils.Constants._
+import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toGB}
 import software.amazon.awssdk.regions.Region
 
 case class EmrOnEksEnv(
   driverInstance: EmrInstance,
   executorInstance: EmrInstance,
   executorInstanceNum: Int,
-  sparkRuntimeConfigs: SparkRuntime,
+  sparkRuntime: SparkRuntime,
   podsPerInstance: Int,
   costs: EmrOnEksCost,
   driver: ResourceRequest,
   executors: ResourceRequest
-) extends Ordered[EmrOnEksEnv] with EmrEnvironment {
+) extends Ordered[EmrOnEksEnv] with EmrEnvironment with HtmlBase {
 
-  val nodeMinStorage = byteStringAsBytes(EmrOnEksNodeMinStorage)
-  val nodeSparkStorage = executors.storage * podsPerInstance
-  val sparkStorage = executors.count * executors.storage
+  private val nodeMinStorage = byteStringAsBytes(EmrOnEksNodeMinStorage)
+  private val nodeSparkStorage = executors.storage * podsPerInstance
+  private val sparkStorage = executors.count * executors.storage
+
+  override def label: String = "Emr On Eks"
+
+  override def description: String = "Run your Spark workloads on Amazon EKS"
+
+  override def serviceIcon: String = HtmlSvgEmrOnEks
 
   def totalCores: Int = driverInstance.vCpu + executorInstanceNum * executorInstance.vCpu
 
@@ -34,8 +40,6 @@ case class EmrOnEksEnv(
   def compare(that: EmrOnEksEnv): Int = this.costs.total compare that.costs.total
 
   override def instances: List[String] = List(driverInstance.instanceType, executorInstance.instanceType)
-
-  override def label: String = "Emr On Eks"
 
   override def htmlDescription: String =
     s"""To optimize performance while minimizing costs, activate ${htmlLink("Karpenter", LinkEmrOnEksKarpenterDoc)}
@@ -49,7 +53,7 @@ case class EmrOnEksEnv(
   )
 
   override def htmlResources: String = htmlTable(
-    List("Role", "Count", "Instance", "Cpu per Instance", "Memory", s"Storage ${htmlTextSmall("**")}"),
+    List("Role", "Count", "Instance", "Cpu", "Memory", s"Storage ${htmlTextSmall("**")}"),
     List(
       List("driver", "1",
         driverInstance.instanceType,
@@ -65,8 +69,21 @@ case class EmrOnEksEnv(
       )
     ), "table-bordered table-striped table-sm text-center")
 
+  override def htmlExample(appInfo: AppInfo): String = {
+    s"""1. (Optional) Create an ${htmlLink("Amazon EKS cluster with Karpenter", LinkEmrOnEksKarpenterGettingStarted)}
+       | and setup an ${htmlLink("EMR on EKS", LinkEmrOnEksQuickStart)} cluster with the ${htmlLink("Spark Operator", LinkEmrOnEksSparkOperator)}
+       |<br/><br/>
+       |2. Create a Storage class to mount dynamically-created ${htmlLink("persistent volume claim", LinkSparkK8sPvc)} on the Spark executors using ${EbsDefaultStorage.toUpperCase} EBS volumes
+       |${htmlCodeBlock(exampleCreateStorageClass, "bash")}
+       |3. Create a custom provisioner to scale the cluster
+       |${htmlCodeBlock(exampleRequirements, "bash")}
+       |4. Review the parameters and submit the application using the Spark Operator
+       |${htmlCodeBlock(exampleSubmitJob(appInfo, sparkRuntime), "bash")}
+       |<p>For additional details, see ${htmlLink("Running jobs with Amazon EMR on EKS", LinkEmrOnEksJobRunsDoc)}
+       |in the EMR Documentation.</p>""".stripMargin
+  }
 
-  def exampleCreateStorageClass: String = {
+  private def exampleCreateStorageClass: String = {
     s"""cat &lt;&lt;EOF | kubectl apply -n ${htmlTextRed("spark-operator")} -f -
        |apiVersion: storage.k8s.io/v1
        |kind: StorageClass
@@ -85,7 +102,7 @@ case class EmrOnEksEnv(
        |""".stripMargin
   }
 
-  override def exampleRequirements(appInfo: AppInfo): String = {
+  private def exampleRequirements: String = {
 
     val awsRegion = costs.region
     val instanceStr = instances.map(x => s""""$x"""").mkString(",")
@@ -157,7 +174,7 @@ case class EmrOnEksEnv(
        |""".stripMargin
   }
 
-  override def exampleSubmitJob(appInfo: AppInfo, conf: SparkRuntime): String = {
+  private def exampleSubmitJob(appInfo: AppInfo, conf: SparkRuntime): String = {
 
     val awsRegion = if (EmrOnEksAccountId.contains(costs.region)) costs.region else Region.US_EAST_1.toString
     val ecrAccountId = EmrOnEksAccountId(awsRegion)
@@ -258,6 +275,5 @@ case class EmrOnEksEnv(
        |EOF
        |""".stripMargin
   }
-
 
 }

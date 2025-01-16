@@ -1,57 +1,28 @@
 package com.amazonaws.emr
 
-import com.amazonaws.emr.report.HtmlReport
+import com.amazonaws.emr.report.ReportSparkSingleJob
 import com.amazonaws.emr.spark.EmrSparkLogParser
+import com.amazonaws.emr.utils.ArgParser
 import com.amazonaws.emr.utils.Constants._
-import com.amazonaws.emr.utils.Formatter.normalizeName
-
-import scala.annotation.tailrec
-import scala.sys.exit
 
 object SparkLogsAnalyzer extends App {
 
-  private val optParams = List(ParamBucket, ParamDuration, ParamExecutors, ParamRegion, ParamSpot)
-  private val appParams = (ParamJar :: optParams) :+ ParamLogs
-  private val usage =
-    s"""
-       |  usage: spark-submit --class com.amazonaws.emr.SparkLogsAnalyzer ${appParams.map(_.template).mkString(" ")}
-       |
-       |  ${appParams.map(_.example).mkString("\n  ")}
-       |
-       |""".stripMargin
+  val className = this.getClass.getCanonicalName.replace("$", "")
+  val baseCmd = s"spark-submit --class $className"
 
-  @tailrec
-  private def parseArgs(map: Map[String, String], list: List[String]): Map[String, String] = {
-    list match {
-      case Nil => map
-      case x :: value :: tail if x.startsWith("--") =>
-        if (optParams.exists(_.option == x)) parseArgs(map ++ Map(normalizeName(x) -> value), tail)
-        else {
-          println(usage)
-          println("Error: Unknown option " + x)
-          exit(1)
-        }
-      case string :: Nil =>
-        parseArgs(map ++ Map("filename" -> string), list.tail)
-      case unknown :: _ =>
-        println(usage)
-        println("Error: Unknown option " + unknown)
-        exit(1)
-    }
-  }
+  val argParser = new ArgParser(baseCmd, 1, SparkAppParams, SparkAppOptParams)
+  val appParams = argParser.parse(args.toList)
 
-  if (args.length < 1) {
-    println(usage)
-    exit(1)
-  }
+  val sparkLogFile = appParams.getOrElse("filename", "")
 
-  val options = parseArgs(Map(), args.toList)
-  val sparkEventLogFile = options.getOrElse("filename", "")
-
-  val logParser = new EmrSparkLogParser(sparkEventLogFile)
+  val logParser = new EmrSparkLogParser(sparkLogFile)
   val appContext = logParser.process()
-  logParser.analyze(appContext, options)
+  logParser.analyze(appContext, appParams)
 
-  HtmlReport.generateReport(appContext, options)
+  val userSettings = Set(ParamExecutors.name, ParamDuration.name)
+  val hasCustomSettings = appParams.keySet.exists(userSettings.contains)
+
+  val report = new ReportSparkSingleJob(appContext, hasCustomSettings)
+  report.save(appParams)
 
 }
