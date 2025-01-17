@@ -27,6 +27,18 @@ Please make sure you have the required [IAM Permissions](./IamPermissions.md) wh
 
 ### Generate an HTML report for a single Spark event log
 
+**Note**: The following commands are intended for local testing. To execute the same commands on an EMR cluster, you first need to upload the `job_spark_pi` file to HDFS. You can do this with the following command, and remember to replace `./src/test/resources/job_spark_pi` with `hdfs:///tmp/job_spark_pi`, or simply use any Spark eventLog file stored on the HDFS or Amazon S3 bucket.
+
+```bash
+# copy sample job file to HDFS
+hdfs dfs -put ./src/test/resources/job_spark_pi /tmp/job_spark_pi
+
+# launch the advisor tool
+spark-submit --class com.amazonaws.emr.SparkLogsAnalyzer \
+  ./target/scala-2.12/aws-emr-advisor-assembly-*.jar \
+  hdfs:///tmp/job_spark_pi
+```
+
 #### Generate a report locally
 
 Reports generated locally are saved in the system's `/tmp` directory.

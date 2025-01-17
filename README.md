@@ -13,7 +13,7 @@ It generates an HTML report, which can be saved locally or uploaded to an Amazon
 
 ### Requirements
 
-- sbt
+- sbt (Java 17)
 - Apache Spark
 - AWS Account
 
@@ -33,6 +33,8 @@ To build the package on an EMR on EC2 (release >= 7.6.0) cluster:
 
 ```bash
 # requirements
+export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.x86_64/
+export PATH=$JAVA_HOME/bin:$PATH
 sudo wget https://www.scala-sbt.org/sbt-rpm.repo -O /etc/yum.repos.d/sbt-rpm.repo
 sudo yum -y install git sbt
 
@@ -45,8 +47,8 @@ sbt clean compile assembly
 
 Run the application on an EMR on EC2 or Spark cluster using the `spark-submit` command. For specific examples, refer to the corresponding [documentation](./docs/spark.md) pages.
 
-- [WIP - Cluster Report](./docs/cluster.md)
 - [Spark Report](./docs/spark.md)
+- [WIP - Cluster Report](./docs/cluster.md)
 
 ## Example Reports
 
