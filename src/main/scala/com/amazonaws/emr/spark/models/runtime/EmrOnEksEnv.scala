@@ -176,10 +176,9 @@ case class EmrOnEksEnv(
 
   private def exampleSubmitJob(appInfo: AppInfo, conf: SparkRuntime): String = {
 
-    val awsRegion = if (EmrOnEksAccountId.contains(costs.region)) costs.region else Region.US_EAST_1.toString
-    val ecrAccountId = EmrOnEksAccountId(awsRegion)
-    val emrRelease = AwsEmr.latestRelease()
-    val sparkVersion = AwsEmr.getSparkVersion(emrRelease)
+    val ecrAccountId = EmrOnEksAccountId(awsRegion.toString)
+    val emrRelease = AwsEmr.latestRelease(awsRegion)
+    val sparkVersion = AwsEmr.getSparkVersion(emrRelease, awsRegion)
     val epoch = System.currentTimeMillis()
 
     val sparkCmd = appInfo.sparkCmd.get

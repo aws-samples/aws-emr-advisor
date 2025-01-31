@@ -1,7 +1,8 @@
 package com.amazonaws.emr.spark.models.runtime
 
 import com.amazonaws.emr.api.AwsEmr
-import com.amazonaws.emr.utils.Constants.{LinkEmrOnEc2Documentation, LinkEmrOnEksDocumentation, LinkEmrServerlessDocumentation, NotAvailable}
+import com.amazonaws.emr.utils.Constants.{DefaultRegion, LinkEmrOnEc2Documentation, LinkEmrOnEksDocumentation, LinkEmrServerlessDocumentation, NotAvailable}
+import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.emrserverless.model._
 
 trait JobRun {
@@ -44,7 +45,7 @@ case class EmrOnEc2Run(
   clusterId: String,
   sparkVersion: String,
   releaseLabel: Option[String],
-  region: String = "") extends JobRun {
+  region: String = DefaultRegion) extends JobRun {
 
   override val name: String = "Emr On Ec2"
 
@@ -67,7 +68,7 @@ case class EmrOnEc2Run(
 
   override def release: List[String] = {
     if (releaseLabel.nonEmpty) List(releaseLabel.get)
-    else AwsEmr.findReleaseBySparkVersion(sparkVersion)
+    else AwsEmr.findReleaseBySparkVersion(sparkVersion, Region.of(region))
   }
 
   override def isRunningOnEmr: Boolean = true
@@ -77,7 +78,7 @@ case class EmrOnEc2Run(
 case class EmrOnEksRun(
   sparkVersion: String,
   releaseLabel: Option[String],
-  region: String = "") extends JobRun {
+  region: String = DefaultRegion) extends JobRun {
 
   override val name: String = "Emr On Eks"
 
@@ -93,7 +94,7 @@ case class EmrOnEksRun(
 
   override def release: List[String] = {
     if (releaseLabel.nonEmpty) List(releaseLabel.get)
-    else AwsEmr.findReleaseBySparkVersion(sparkVersion).filter(_.contains(".0"))
+    else AwsEmr.findReleaseBySparkVersion(sparkVersion, Region.of(region))
   }
 
   override def isRunningOnEmr: Boolean = true
@@ -103,7 +104,8 @@ case class EmrOnEksRun(
 case class EmrServerlessRun(
   jobRunId: String,
   sparkVersion: String,
-  appSummary: Option[ApplicationSummary]) extends JobRun {
+  appSummary: Option[ApplicationSummary],
+  region: String = DefaultRegion) extends JobRun {
 
   override val name: String = "Emr Serverless"
 
@@ -119,9 +121,7 @@ case class EmrServerlessRun(
   override def deploymentInfo: String = s"$deployment / $applicationId / $jobRunId"
 
   override def release: List[String] = appSummary.map(s => List(s.releaseLabel())).getOrElse {
-    // Emr serverless only publish first version of a release in the doc (e.g 6.8.0, 6.9.0)
-    // minor versions are not published so we skip them
-    AwsEmr.findReleaseBySparkVersion(sparkVersion).filter(_.contains(".0"))
+    AwsEmr.findReleaseBySparkVersion(sparkVersion, Region.of(region))
   }
 
   override def isRunningOnEmr: Boolean = true

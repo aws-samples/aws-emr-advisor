@@ -3,14 +3,18 @@ package com.amazonaws.emr.spark.analyzer
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.report.HtmlBase
 import com.amazonaws.emr.spark.models.AppContext
+import com.amazonaws.emr.utils.Constants.{DefaultRegion, ParamRegion}
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr}
 import org.apache.logging.log4j.scala.Logging
+import software.amazon.awssdk.regions.Region
 
 class AppInsightsAnalyzer extends AppAnalyzer with HtmlBase with Logging {
 
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
     logger.info("Generate application insights...")
+
+    val awsRegion = options.getOrElse(ParamRegion.name, DefaultRegion)
 
     val executors = appContext.appSparkExecutors
     val totalSpilledBytes = executors.getTotalDiskBytesSpilled
@@ -66,7 +70,7 @@ class AppInsightsAnalyzer extends AppAnalyzer with HtmlBase with Logging {
     //=================================================================================================
     // EMR Insights
     //=================================================================================================
-    val latestEmr = AwsEmr.latestRelease()
+    val latestEmr = AwsEmr.latestRelease(Region.of(awsRegion))
     val deployment = appContext.appInfo.runtime
     if (deployment.isRunningOnEmr && !deployment.release.contains(latestEmr)) {
       appContext.appInfo.insightsWarn("emr_version") = htmlTextWarning(

@@ -5,10 +5,13 @@ import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, DefaultCurrency, EmrI
 import com.amazonaws.emr.report.HtmlBase
 import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.utils.Formatter.printDuration
+import software.amazon.awssdk.regions.Region
 
 trait EmrEnvironment extends HtmlBase {
 
   val costs: EmrCosts
+
+  val awsRegion = Region.of(costs.region)
 
   val sparkRuntime: SparkRuntime
 

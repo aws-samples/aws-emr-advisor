@@ -10,6 +10,7 @@ import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.EmrOnEc2Env.{getClusterClassifications, getNodeUsableMemory}
 import com.amazonaws.emr.utils.Constants.{HtmlSvgEmrOnEc2, LinkEmrOnEc2IamRoles, LinkEmrOnEc2QuickStart}
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toMB}
+import software.amazon.awssdk.regions.Region
 
 case class EmrOnEc2Env(
   masterNode: EmrInstance,
@@ -75,7 +76,7 @@ case class EmrOnEc2Env(
   private def exampleSubmitJob(appInfo: AppInfo): String = {
 
     val epoch = System.currentTimeMillis()
-    val emrRelease = AwsEmr.latestRelease()
+    val emrRelease = AwsEmr.latestRelease(awsRegion)
     val stepName = htmlTextRed(s"spark-test-$epoch")
     val classifications = getClusterClassifications(
       sparkRuntime, toMB(getNodeUsableMemory(coreNode))

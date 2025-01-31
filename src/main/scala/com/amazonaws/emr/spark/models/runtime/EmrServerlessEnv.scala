@@ -83,7 +83,7 @@ case class EmrServerlessEnv(
 
   private def exampleRequirements: String = {
     val epoch = System.currentTimeMillis()
-    val latestRelease = AwsEmr.latestRelease()
+    val latestRelease = AwsEmr.latestRelease(awsRegion)
     val totalMemoryWithOverhead = {
       getMemoryWithOverhead(driver.memory, 0.15) + getMemoryWithOverhead(executors.memory, 0.15) * executors.count
     }

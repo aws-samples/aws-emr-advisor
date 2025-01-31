@@ -60,11 +60,12 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
 
       val appName = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.name", NotAvailable)
       val jobRunId = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.id", NotAvailable)
-      val region = appContext.appConfigs.sparkConfigs.getOrElse("spark.hadoop.aws.region",
-        options.getOrElse(ParamRegion.name, DefaultRegion))
+      val region = appContext.appConfigs.sparkConfigs.getOrElse(
+        "spark.hadoop.aws.region", options.getOrElse(ParamRegion.name, DefaultRegion)
+      )
       val application = AwsEmr.findServerlessApplicationByJobRun(appName, jobRunId, Region.of(region))
 
-      EmrServerlessRun(jobRunId, sparkVersion, application)
+      EmrServerlessRun(jobRunId, sparkVersion, application, region)
 
     } else NotDetectedRun()
 
