@@ -1,4 +1,4 @@
-ThisBuild / version := "0.3.0"
+ThisBuild / version := "0.3.1"
 ThisBuild / organization := "com.amazonaws.emr"
 ThisBuild / scalaVersion := "2.12.15"
 
