@@ -43,7 +43,7 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       val region = AWSRegion.values()
         .map(r => r.toString).toList
         .find(r => appContext.appConfigs.sparkConfigs.values.toList.exists(p => p matches s".*$r.*"))
-        .getOrElse("")
+        .getOrElse(DefaultRegion)
 
       EmrOnEc2Run(clusterId, sparkVersion, releaseLabel, region)
 
@@ -52,7 +52,7 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       val region = AWSRegion.values()
         .map(r => r.toString).toList
         .find(r => appContext.appConfigs.sparkConfigs.values.toList.exists(p => p matches s".*$r.*"))
-        .getOrElse("")
+        .getOrElse(DefaultRegion)
 
       EmrOnEksRun(sparkVersion, None, region)
 
