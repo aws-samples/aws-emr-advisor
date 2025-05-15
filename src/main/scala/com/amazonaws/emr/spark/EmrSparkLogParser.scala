@@ -8,7 +8,7 @@ import net.jpountz.lz4.LZ4BlockInputStream
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
 import org.apache.logging.log4j.scala.Logging
 import org.apache.spark.SparkConf
-import org.apache.spark.utils.SparkHelper
+import org.apache.spark.utils.SparkHadoopHelper
 import org.json4s.{DefaultFormats, _}
 import org.json4s.native.JsonMethods._
 import org.xerial.snappy.SnappyInputStream
@@ -23,7 +23,7 @@ class EmrSparkLogParser(eventLogPath: String) extends Logging {
 
   private val sparkConf = new SparkConf()
 
-  private val hadoopConf = SparkHelper.newConfiguration(sparkConf)
+  private val hadoopConf = SparkHadoopHelper.newConfiguration(sparkConf)
 
   private val fs = FileSystem.get(new URI(eventLogPath), hadoopConf)
 

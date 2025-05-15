@@ -6,7 +6,7 @@ import com.amazonaws.emr.spark.models.runtime._
 import com.amazonaws.emr.utils.Constants.{DefaultRegion, NotAvailable, ParamRegion}
 import com.amazonaws.services.costandusagereport.model.AWSRegion
 import org.apache.logging.log4j.scala.Logging
-import org.apache.spark.utils.SparkHelper.parseSparkCmd
+import org.apache.spark.utils.SparkSubmitHelper
 import software.amazon.awssdk.regions.Region
 
 class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
@@ -79,7 +79,7 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       val cmdStr = cmd.get.replace("spark.emr-serverless.lakeformation.enabled=",
         "spark.emr-serverless.lakeformation.enabled=false")
 
-      appContext.appInfo.sparkCmd = Some(parseSparkCmd(cmdStr))
+      appContext.appInfo.sparkCmd = Some(SparkSubmitHelper.parse(cmdStr))
 
     }
   }

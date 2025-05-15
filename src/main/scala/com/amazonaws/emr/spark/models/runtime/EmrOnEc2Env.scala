@@ -10,7 +10,7 @@ import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.EmrOnEc2Env.{getClusterClassifications, getNodeUsableMemory}
 import com.amazonaws.emr.utils.Constants.{HtmlSvgEmrOnEc2, LinkEmrOnEc2IamRoles, LinkEmrOnEc2QuickStart}
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toMB}
-import software.amazon.awssdk.regions.Region
+import org.apache.spark.utils.SparkSubmitHelper.SparkSubmitCommand
 
 case class EmrOnEc2Env(
   masterNode: EmrInstance,
@@ -73,6 +73,26 @@ case class EmrOnEc2Env(
 
   private def exampleCreateIamRoles: String = "aws emr create-default-roles"
 
+  private def exampleSubmitStep(cmd: SparkSubmitCommand): String = {
+    val mainClass = htmlTextRed(cmd.appMainClass)
+    val jarPath = htmlTextRed(cmd.appScriptJarPath)
+    val appParams = if (cmd.appArguments.nonEmpty) {
+      htmlTextRed(cmd.appArguments.mkString("\"", "\",\"", "\""))
+    } else ""
+
+    if (cmd.isScala) {
+      s""""spark-submit",
+         |        "--class",
+         |        "$mainClass",
+         |        "$jarPath",
+         |        $appParams""".stripMargin
+    } else {
+      s""""spark-submit",
+         |        "$jarPath",
+         |        $appParams""".stripMargin
+    }
+  }
+
   private def exampleSubmitJob(appInfo: AppInfo): String = {
 
     val epoch = System.currentTimeMillis()
@@ -106,7 +126,7 @@ case class EmrOnEc2Env(
        |    {
        |      "Name": "$stepName",
        |      "Args": [
-       |        ${sparkCmd.submitEc2Step}
+       |        ${exampleSubmitStep(sparkCmd)}
        |      ],
        |      "ActionOnFailure": "CONTINUE",
        |      "Jar": "command-runner.jar",

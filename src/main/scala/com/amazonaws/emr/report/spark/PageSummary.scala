@@ -114,7 +114,7 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
        |</div>
        |<div class="row">
        |  <div class="col-sm">
-       |    ${if (appInfo.sparkCmd.get.isScala) scalaRuntime else if (appInfo.sparkCmd.get.isPython) pyRuntime}
+       |    ${if (appInfo.sparkCmd.get.isPython) pyRuntime else scalaRuntime}
        |  </div>
        |</div>
        |<div class="row">

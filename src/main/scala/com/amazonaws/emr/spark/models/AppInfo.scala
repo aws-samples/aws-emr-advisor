@@ -2,7 +2,7 @@ package com.amazonaws.emr.spark.models
 
 import com.amazonaws.emr.utils.Constants.NotAvailable
 import com.amazonaws.emr.spark.models.runtime.{JobRun, NotDetectedRun}
-import org.apache.spark.utils.SparkHelper.SparkCommand
+import org.apache.spark.utils.SparkSubmitHelper.SparkSubmitCommand
 
 class AppInfo {
 
@@ -22,7 +22,7 @@ class AppInfo {
 
   val insightsTaskFailures = new scala.collection.mutable.HashMap[Long, String]
 
-  var sparkCmd: Option[SparkCommand] = None
+  var sparkCmd: Option[SparkSubmitCommand] = None
 
   /** Return the time (in ms) the application was running */
   def duration: Long = endTime - startTime
