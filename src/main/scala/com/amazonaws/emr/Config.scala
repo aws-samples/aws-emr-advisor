@@ -61,7 +61,7 @@ object Config {
   val ComputeIntensiveMaxMemory = "2g"
   val MemoryIntensiveMinMemory = "8g"
 
-  val EmrReleaseFilter = "emr-6."
+  val EmrReleaseFilter = List("emr-7.", "emr-8.")
 
   val SparkMaxDriverCores = 4
   val SparkMaxDriverMemory = "60gb"

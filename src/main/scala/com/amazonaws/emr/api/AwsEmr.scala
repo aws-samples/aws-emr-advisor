@@ -18,21 +18,22 @@ object AwsEmr extends Logging {
 
   private val cachedReleases = new ConcurrentHashMap[Region, List[String]]()
   private val cachedSparkRelease = Map(
-    "3.5.3" -> List("emr-7.6.0"),
-    "3.5.2" -> List("emr-7.5.0","emr-7.4.0"),
-    "3.5.1" -> List("emr-7.3.0","emr-7.2.0"),
-    "3.5.0" -> List("emr-7.1.0","emr-7.0.0"),
-    "3.4.1" -> List("emr-6.15.0","emr-6.14.0","emr-6.13.0"),
+    "3.5.4" -> List("emr-7.8.0"),
+    "3.5.3" -> List("emr-7.6.0", "emr-7.7.0"),
+    "3.5.2" -> List("emr-7.5.0", "emr-7.4.0"),
+    "3.5.1" -> List("emr-7.3.0", "emr-7.2.0"),
+    "3.5.0" -> List("emr-7.1.0", "emr-7.0.0"),
+    "3.4.1" -> List("emr-6.15.0", "emr-6.14.0", "emr-6.13.0"),
     "3.4.0" -> List("emr-6.12.0"),
     "3.3.2" -> List("emr-6.11.0"),
     "3.3.1" -> List("emr-6.10.0"),
-    "3.3.0" -> List("emr-6.9.0","emr-6.8.0"),
+    "3.3.0" -> List("emr-6.9.0", "emr-6.8.0"),
     "3.2.1" -> List("emr-6.7.0"),
     "3.2.0" -> List("emr-6.6.0"),
-    "3.1.2" -> List("emr-6.5.0","emr-6.4.0"),
+    "3.1.2" -> List("emr-6.5.0", "emr-6.4.0"),
     "3.1.1" -> List("emr-6.3.0"),
     "3.0.1" -> List("emr-6.2.0"),
-    "3.0.0" -> List("emr-6.1.0"),
+    "3.0.0" -> List("emr-6.1.0")
   )
 
   /**
@@ -67,30 +68,36 @@ object AwsEmr extends Logging {
    * @param sparkVersion e.g 	3.4.1-amzn-1, 3.4.1
    */
   def findReleaseBySparkVersion(sparkVersion: String, region: Region = Region.US_EAST_1): List[String] = {
-
+    logger.debug(s"Searching EMR releases for Spark $sparkVersion ($region)")
     val sparkBase = sparkVersion.split("-amzn")(0)
-
-    if(cachedSparkRelease.contains(sparkBase)) cachedSparkRelease(sparkBase)
-    else emrReleaseSparkVersion(region = region)
-      .collect { case (label, version) if sparkVersion.contains(version) => label }
-      .toList
-
+    if(cachedSparkRelease.contains(sparkBase)) {
+      val releases = cachedSparkRelease(sparkBase)
+      logger.debug(s"Spark $sparkVersion is available in emr: ${releases.mkString(" ")}")
+      releases
+    }
+    else {
+      emrReleaseSparkVersion(region = region)
+        .collect { case (label, version) if sparkVersion.contains(version) => label }
+        .toList
+    }
   }
 
   private def emrReleaseSparkVersion(
-    emrMajorVersion: String = Config.EmrReleaseFilter,
-    region: Region = Region.US_EAST_1): Map[String, String] = {
-
-    val releaseList = releases(region)
-      .filter(label => label.contains(emrMajorVersion) && label.endsWith(".0"))
+    emrMajorVersion: List[String] = Config.EmrReleaseFilter,
+    region: Region = Region.US_EAST_1
+  ): Map[String, String] = {
 
     val client = EmrClient.builder().region(region).build()
+    val cachedReleases = cachedSparkRelease.flatMap(_._2).toList
+    val filteredReleases = releases(region)
+      .filter(label => !cachedReleases.contains(label))
+      .filter(label => label.endsWith(".0") && emrMajorVersion.exists(mr => label.contains(mr)))
 
     try {
-      releaseList.flatMap { label =>
+      filteredReleases.flatMap { label =>
+        logger.debug(s"Describing EMR $label")
         val request = DescribeReleaseLabelRequest.builder().releaseLabel(label).build()
         val response = client.describeReleaseLabel(request)
-
         response.applications().asScala
           .find(_.name() == "Spark")
           .map(app => label -> app.version())
