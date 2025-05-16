@@ -109,6 +109,8 @@ object SparkSubmitHelper extends HtmlBase {
       case arg :: tail if seenMainFile =>
         parseTokens(tail, deployMode, mainClass, mainFile, propsFile, conf, extraArgs, scriptArgs :+ arg, seenMainFile)
 
+      case _ =>
+        (tokens, deployMode, mainClass, mainFile, propsFile, conf, extraArgs, scriptArgs)
     }
   }
 

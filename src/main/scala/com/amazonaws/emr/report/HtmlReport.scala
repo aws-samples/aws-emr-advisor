@@ -288,7 +288,7 @@ trait HtmlReport extends HtmlBase {
        |  </a>
        |  <div class="w-100">
        |    <div class="d-flex bd-highlight">
-       |      <div class="mr-auto px-4 fs-4 bd-highlight">
+       |      <div class="mr-auto px-4 my-2 fs-5 bd-highlight">
        |        <span class="primary-color">$reportName</span>
        |        <span class="text-white">/</span>
        |        <span class="primary-color">$title</span>

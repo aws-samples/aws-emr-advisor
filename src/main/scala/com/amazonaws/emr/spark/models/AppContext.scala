@@ -11,7 +11,8 @@ class AppContext(
   val jobMap: Map[Long, JobTimeSpan],
   val jobSQLExecIdMap: Map[Long, Long],
   val stageMap: Map[Int, StageTimeSpan],
-  val stageIDToJobID: Map[Int, Long]) {
+  val stageIDToJobID: Map[Int, Long]
+) {
 
   val appEfficiency = new AppEfficiency
   val appRecommendations = new AppRecommendations

@@ -2,11 +2,14 @@ package com.amazonaws.emr.spark.analyzer
 
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics
+import com.amazonaws.emr.spark.models.timespan.{JobTimeSpan, StageTimeSpan}
 import com.amazonaws.emr.spark.scheduler.JobOverlapHelper
+import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes}
 import org.apache.logging.log4j.scala.Logging
 
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.Duration
+import scala.util.Try
 
 class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
 
@@ -84,6 +87,29 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
     appContext.appEfficiency.driverWastedPercentOverAll = driverWastedPercentOverAll
     appContext.appEfficiency.executorWastedPercentOverAll = executorWastedPercentOverAll
 
+    // Evaluate Driver performance
+    val totalResultSize = appContext.appMetrics.appAggMetrics.getMetricSum(AggTaskMetrics.resultSize)
+    val numJobs = appContext.appMetrics.getTotalJobs.max(1)
+    val avgResultSize = totalResultSize / numJobs
+
+    val jobSubmissionGaps = getDriverJobSubmissionDelays(
+      appContext.jobMap, appContext.stageMap, appContext.stageIDToJobID
+    )
+    val avgJobDelayMs = if (jobSubmissionGaps.nonEmpty) jobSubmissionGaps.sum / jobSubmissionGaps.size else 0
+
+    val isSchedulingHeavy = avgJobDelayMs > 1000
+    val isResultHeavy = avgResultSize > byteStringAsBytes("16mb")
+
+    logger.debug(s"(driver) totalResultSize ${humanReadableBytes(totalResultSize)}")
+    logger.debug(s"(driver) numJobs $numJobs")
+    logger.debug(s"(driver) avgResultSize ${humanReadableBytes(avgResultSize)}")
+    logger.debug(s"(driver) avgJobDelayMs $avgJobDelayMs")
+    logger.debug(s"(driver) isResultHeavy $isResultHeavy")
+    logger.debug(s"(driver) isSchedulingHeavy $isSchedulingHeavy")
+
+    appContext.appEfficiency.isResultHeavy = isResultHeavy
+    appContext.appEfficiency.isSchedulingHeavy = isSchedulingHeavy
+
     // Executor Metrics
     val executorTotalMemory = appContext.appSparkExecutors.defaultExecutorMemory
     val executorPeakJvmMemory = appContext.appSparkExecutors.getMaxJvmMemoryUsed
@@ -100,6 +126,98 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
     appContext.appEfficiency.executorsMaxTaskMemory = executorsMaxTaskMemory
     appContext.appEfficiency.executorsTasksPerSecond = executorsTasksPerSecond
     appContext.appEfficiency.executorCoreMemoryRatio = executorCoreMemoryRatio
+
+    val totalCpuTimeNs = appContext.appMetrics.appAggMetrics.getMetricSum(AggTaskMetrics.executorCpuTime)
+    val totalRunTimeMs = appContext.appMetrics.appAggMetrics.getMetricSum(AggTaskMetrics.executorRunTime)
+
+    val avgCpuUtil: Double = if (totalRunTimeMs > 0)
+      (totalCpuTimeNs.toDouble / (totalRunTimeMs * 1000000)).min(1.0)
+    else
+      0.0
+
+    val totalGcTime = appContext.appMetrics.appAggMetrics.getMetricSum(AggTaskMetrics.jvmGCTime)
+    val totalTasks = appContext.appMetrics.getTotalTasks.max(1)
+    val maxTaskMemory = appContext.appSparkExecutors.getMaxTaskMemoryUsed
+
+    val avgTaskDuration = totalRunTimeMs / totalTasks
+    val gcRatio = totalGcTime.toDouble / totalRunTimeMs
+
+    val isCpuBound = avgCpuUtil > 0.7
+    val isGcHeavy = gcRatio > 0.1
+    val isTaskShort = avgTaskDuration < 2000
+    val isTaskMemoryHeavy = maxTaskMemory >= byteStringAsBytes("16g")
+
+    appContext.appEfficiency.isCpuBound = isCpuBound
+    appContext.appEfficiency.isGcHeavy = isGcHeavy
+    appContext.appEfficiency.isTaskShort = isTaskShort
+    appContext.appEfficiency.isTaskMemoryHeavy = isTaskMemoryHeavy
+
+    logger.debug(s"(executor) totalCpuTimeNs     $totalCpuTimeNs")
+    logger.debug(s"(executor) totalRunTimeMs     $totalRunTimeMs")
+    logger.debug(s"(executor) totalGcTime        $totalGcTime")
+    logger.debug(s"(executor) totalTasks         $totalTasks")
+    logger.debug(s"(executor) avgTaskDuration    $avgTaskDuration")
+    logger.debug(s"(executor) avgCpuUtil         $avgCpuUtil")
+    logger.debug(s"(executor) gcRatio            $gcRatio")
+    logger.debug(s"(executor) isCpuBound         $isCpuBound")
+    logger.debug(s"(executor) isGcHeavy          $isGcHeavy")
+    logger.debug(s"(executor) isTaskShort        $isTaskShort")
+    logger.debug(s"(executor) isTaskMemoryHeavy  $isTaskMemoryHeavy")
+
+    // ========================================================================
+    // Spark Task metrics
+    // ========================================================================
+    val taskMaxPeakMemory = Try(
+      appContext.appMetrics.appAggMetrics.getMetricMax(AggTaskMetrics.peakExecutionMemory)
+    ).getOrElse(0L)
+
+    val taskMaxMemorySpilled = Try(
+      appContext.appMetrics.appAggMetrics.getMetricMax(AggTaskMetrics.memoryBytesSpilled)
+    ).getOrElse(0L)
+
+    val taskMaxDiskSpilled = Try(
+      appContext.appMetrics.appAggMetrics.getMetricMax(AggTaskMetrics.diskBytesSpilled)
+    ).getOrElse(0L)
+
+    val taskMaxResultSize = Try(
+      appContext.appMetrics.appAggMetrics.getMetricMax(AggTaskMetrics.resultSize)
+    ).getOrElse(0L)
+
+    appContext.appEfficiency.taskMaxPeakMemory = taskMaxPeakMemory
+    appContext.appEfficiency.taskMaxMemorySpilled = taskMaxMemorySpilled
+    appContext.appEfficiency.taskMaxDiskSpilled = taskMaxDiskSpilled
+    appContext.appEfficiency.taskMaxResultSize = taskMaxResultSize
+
+    logger.debug(s"(task) taskMaxPeakMemory        $taskMaxPeakMemory")
+    logger.debug(s"(task) taskMaxMemorySpilled     $taskMaxMemorySpilled")
+    logger.debug(s"(task) taskMaxDiskSpilled       $taskMaxDiskSpilled")
+    logger.debug(s"(task) taskMaxResultSize        $taskMaxResultSize")
+
+  }
+
+  def getDriverJobSubmissionDelays(
+    jobMap: Map[Long, JobTimeSpan],
+    stageMap: Map[Int, StageTimeSpan],
+    stageIDToJobID: Map[Int, Long]
+  ): Seq[Long] = {
+    jobMap.flatMap { case (jobId, jobSpan) =>
+      val jobSubmissionTime = jobSpan.startTime
+
+      // Find all stage IDs that belong to this job
+      val stagesForJob = stageIDToJobID.collect {
+        case (stageId, jId) if jId == jobId => stageId
+      }
+
+      // Find the earliest stage submission time for this job
+      val minStageSubmissionTimeOpt = stagesForJob.flatMap { stageId =>
+        stageMap.get(stageId).map(_.startTime)
+      }.reduceOption(_ min _)
+
+      // Calculate delay if both job and stage submission time are available
+      minStageSubmissionTimeOpt.map { minStageTime =>
+        (minStageTime - jobSubmissionTime).max(0L)  // avoid negative due to clock skew
+      }
+    }.toSeq
   }
 
 }

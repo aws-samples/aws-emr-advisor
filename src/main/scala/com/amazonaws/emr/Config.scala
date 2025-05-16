@@ -64,7 +64,10 @@ object Config {
   val EmrReleaseFilter = List("emr-7.", "emr-8.")
 
   val SparkMaxDriverCores = 4
-  val SparkMaxDriverMemory = "60gb"
+  val SparkMaxDriverMemory = "64gb"
+
+  val SparkMaxExecutorCores = 16
+
   val SparkInstanceFamilies: Seq[String] = List("m", "c", "r", "d")
   val SparkNvmeThreshold = "100g"
 

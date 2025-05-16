@@ -40,24 +40,33 @@ class SparkCostOptimizer(awsRegion: String, spotDiscount: Double) extends Loggin
     expectedDuration: Option[Long] = None
   ): Option[SparkRuntime] = {
 
-    val sparkConfs = expectedDuration
-      .map(t => simulationList.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t))
-      .getOrElse(simulationList)
-      .map(SparkBaseOptimizer.createSparkRuntime(appContext, _))
-
     val sparkRuntime = environment match {
+
       case EC2 | EKS =>
-        val optimizedConfigs = sparkConfs.map(c => findOptEnv(c, environment, optType).get)
+
+        val optimizedConfigs = expectedDuration
+          .map(t => simulationList.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t))
+          .getOrElse(simulationList)
+          .map(SparkBaseOptimizer.createEc2SparkRuntime(appContext, _))
+          .map(c => findOptEnv(c, environment, optType).get)
+
         Some(optimizedConfigs.minBy(_.costs.total).sparkRuntime)
+
       case SERVERLESS =>
-        val optimalConfig = sparkConfs
+
+        val optimalConfig = expectedDuration
+          .map(t => simulationList.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t))
+          .getOrElse(simulationList)
+          .flatMap(sim => SparkBaseOptimizer.createSvlSparkRuntime(appContext, sim))
           .filter(isValidConfig)
-          .map(normalizeSparkConfigs)
           .flatMap(findEmrServerlessOptimal(_, optType))
           .minBy(_.costs.total)
           .sparkRuntime
+
         Some(optimalConfig)
+
       case _ => None
+
     }
 
     sparkRuntime

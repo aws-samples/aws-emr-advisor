@@ -47,7 +47,7 @@ object CompletionEstimator extends Logging {
     }
   }
 
-  private def processStages(maxStageIDs: List[Int], estate: EstimatorState, scheduler: PQParallelStageScheduler): Long = {
+  def processStages(maxStageIDs: List[Int], estate: EstimatorState, scheduler: PQParallelStageScheduler): Long = {
     //In the worst case we need to push all stages to completion
     val MAX_COMPLETION_TRIES = estate.stagesData.size + 1
     var completionRetries = 0
@@ -184,10 +184,9 @@ object CompletionEstimator extends Logging {
     val jobTime = JobOverlapHelper.estimatedTimeSpentInJobs(ac)
     val driverTimeJobBased = appTotalTime - jobTime
 
-    (
-      jobGroupsList.map(x => estimateJobListWallClockTime(x, executorCount, executorsCores)).sum + driverTimeJobBased,
-      driverTimeJobBased
-    )
+    val estimatedAppTime = driverTimeJobBased + jobGroupsList.map(x => estimateJobListWallClockTime(x, executorCount, executorsCores)).sum
+
+    (estimatedAppTime,driverTimeJobBased)
 
   }
 

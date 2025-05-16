@@ -55,7 +55,8 @@ libraryDependencies ++= Seq(
 
   // Scala Tests
   "org.scalactic" %% "scalactic" % scalaTestsVersion % "test",
-  "org.scalatest" %% "scalatest" % scalaTestsVersion % "test"
+  "org.scalatest" %% "scalatest" % scalaTestsVersion % "test",
+  "org.mockito" %% "mockito-scala-scalatest" % "1.17.30" % Test
 )
 
 assembly / assemblyMergeStrategy := {

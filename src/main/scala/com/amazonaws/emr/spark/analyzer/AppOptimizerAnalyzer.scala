@@ -6,7 +6,7 @@ import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.Environment.{EC2, EKS, SERVERLESS}
 import com.amazonaws.emr.spark.models.runtime.{EmrEnvironment, SparkRuntime}
 import com.amazonaws.emr.spark.optimizer.{SparkBaseOptimizer, SparkCostOptimizer, SparkTimeOptimizer}
-import com.amazonaws.emr.spark.scheduler.CompletionEstimator
+import com.amazonaws.emr.spark.scheduler.{CompletionEstimator, StageRuntimeComparator}
 import com.amazonaws.emr.utils.Constants._
 import com.amazonaws.emr.utils.Formatter._
 import org.apache.logging.log4j.scala.Logging
@@ -69,7 +69,7 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
     appContext.appRecommendations.currentSparkConf = Some(currentConf)
 
     // generate base requirement and simulations
-    val coresList = SparkBaseOptimizer.getOptimalCoresPerExecutor(appContext)
+    val coresList = SparkBaseOptimizer.findOptCoresPerExecutor(appContext)
     if (coresList.isEmpty) throw new RuntimeException("coresList is empty.")
 
     val simulationList = coresList.flatMap { coreNum =>
@@ -77,6 +77,10 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
         case (numExecutors, estimate) => SimulationWithCores(coreNum, numExecutors, estimate)
       }
     }
+
+    val results = StageRuntimeComparator.compareRealVsEstimatedStageTimes(appContext)
+    StageRuntimeComparator.printDebug(results)
+
     appContext.appRecommendations.simulations = Some(simulationList)
 
     val sparkCostOptimizer = new SparkCostOptimizer(awsRegion, spotDiscount)
@@ -131,6 +135,7 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
     maxExecutors: Int
   ): Seq[(Int, AppRuntimeEstimate)] = {
 
+    logger.debug(s"Estimate $coresPerExecutor - (1 to $maxExecutors)")
     val executorsTests = (1 to maxExecutors).par
     executorsTests.map { executorsCount =>
       val (estimatedAppTime, driverTime) = CompletionEstimator.estimateAppWallClockTimeWithJobLists(
@@ -139,6 +144,7 @@ class AppOptimizerAnalyzer extends AppAnalyzer with Logging {
         coresPerExecutor,
         appContext.appInfo.duration
       )
+
       val estimatedTotalCoreMs = (estimatedAppTime - driverTime) * executorsCount * coresPerExecutor
       executorsCount -> AppRuntimeEstimate(estimatedAppTime, estimatedTotalCoreMs)
     }.seq

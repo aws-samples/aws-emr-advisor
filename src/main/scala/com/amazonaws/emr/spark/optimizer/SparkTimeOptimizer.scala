@@ -19,15 +19,16 @@ object SparkTimeOptimizer extends Logging {
     val optimalSimulation = simulationList
       .groupBy(_.coresPerExecutor)
       .map { case (_, group) => findOptTimeNumExecutors(group, maxDrop) }
-      .minBy(_.appRuntimeEstimate.estimatedAppTimeMs)
 
     Some(environment match {
       case EC2 | EKS =>
-        SparkBaseOptimizer.createSparkRuntime(appContext, optimalSimulation)
+        val ec2OptSimulation = optimalSimulation.minBy(_.appRuntimeEstimate.estimatedAppTimeMs)
+        SparkBaseOptimizer.createEc2SparkRuntime(appContext, ec2OptSimulation)
+
       case SERVERLESS =>
-        EmrServerlessEnv.normalizeSparkConfigs(
-          SparkBaseOptimizer.createSparkRuntime(appContext, optimalSimulation)
-        )
+        optimalSimulation
+          .flatMap(SparkBaseOptimizer.createSvlSparkRuntime(appContext, _))
+          .minBy(_.runtime)
     })
   }
 

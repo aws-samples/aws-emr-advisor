@@ -143,7 +143,7 @@ object EmrServerlessEnv {
 
   // Worker configurations based on the documentation
   // https://docs.aws.amazon.com/emr/latest/EMR-Serverless-UserGuide/app-behavior.html#worker-configs
-  private val WorkerSupportedConfig: List[WorkerNodeSpec] = List(
+  val WorkerSupportedConfig: List[WorkerNodeSpec] = List(
     WorkerNodeSpec(1, 2, 8, 1, 200),
     WorkerNodeSpec(2, 4, 16, 1, 200),
     WorkerNodeSpec(4, 8, 30, 1, 200),
@@ -158,6 +158,9 @@ object EmrServerlessEnv {
     )
 
   def normalizeSparkConfigs(sparkRuntime: SparkRuntime): SparkRuntime = {
+
+    println(sparkRuntime)
+
     val normalizedDriver = findWorkerByCpuMemory(sparkRuntime.driverCores, sparkRuntime.driverMemory)
     val normalizedExecutor = findWorkerByCpuMemory(sparkRuntime.executorCores, sparkRuntime.executorMemory)
 

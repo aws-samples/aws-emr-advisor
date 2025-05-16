@@ -56,6 +56,11 @@ class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], val appCon
     .map(x => Try(x.executorTaskMetrics.getMetricSum(AggTaskMetrics.diskBytesSpilled)).getOrElse(0L))
     .max
 
+  /** Max bytes spilled from Memory of a single executor */
+  def getMaxMemoryBytesSpilled: Long = getOnlyExecutors.values
+    .map(x => Try(x.executorTaskMetrics.getMetricMax(AggTaskMetrics.memoryBytesSpilled)).getOrElse(0L))
+    .max
+
   /** Total bytes spilled to disk across all executors (Bytes) */
   def getTotalDiskBytesSpilled: Long = getOnlyExecutors.values
     .map(x => Try(x.executorTaskMetrics.getMetricSum(AggTaskMetrics.diskBytesSpilled)).getOrElse(0L))
