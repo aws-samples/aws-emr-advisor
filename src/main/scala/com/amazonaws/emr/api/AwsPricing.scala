@@ -12,7 +12,16 @@ import software.amazon.awssdk.services.pricing.model.{Filter, GetProductsRequest
 import scala.collection.JavaConverters._
 
 /**
- * Utility class to retrieve AWS services pricing
+ * AwsPricing provides static pricing metadata and lookup utilities for
+ * AWS EMR-related services and instance types.
+ *
+ * It supports multiple deployment modes including:
+ *   - EMR on EC2 (instance-level pricing and configuration)
+ *   - EMR on EKS (per-pod cost uplift for EMR Containers)
+ *   - EMR Serverless (resource-based billing per vCPU, memory, and storage)
+ *
+ * This object is typically loaded at application startup or analysis time
+ * and used throughout cost estimation workflows.
  */
 object AwsPricing {
 
@@ -70,7 +79,16 @@ object AwsPricing {
     yarnMaxMemoryMB: Int,
     ec2Price: Double,
     emrPrice: Double
-  )
+  ) {
+    override def toString: String = {
+      s"""|$instanceType ($instanceFamily) current: $currentGeneration
+          |cpu: $vCpu memory: $memoryGiB GB
+          |disk: $volumeNumber * $volumeSizeGB GB($volumeType)
+          |network: $networkBandwidthGbps Gbps
+          |price: $ec2Price $$(ec2) $emrPrice $$(emr)
+          |""".stripMargin
+    }
+  }
 
   private case class EmrInstancePrice(
     instanceType: String,
@@ -307,33 +325,32 @@ object AwsPricing {
    */
   def getEmrAvailableInstances(region: String = Region.US_EAST_1.toString): List[EmrInstance] = {
 
-    val ec2Product = getEc2ServicePrice(region).sortBy(_.instanceType)
-    val emrProduct = getEmrServicePrice(region).sortBy(_.instanceType)
+    val ec2Map = getEc2ServicePrice(region).map(e => e.instanceType -> e).toMap
+    val emrInstances = getEmrServicePrice(region).filter(e => ec2Map.contains(e.instanceType))
 
-    val commonProducts = emrProduct.map(_.instanceType).intersect(ec2Product.map(_.instanceType))
-    val ec2Instances = ec2Product.filter(i => commonProducts.contains(i.instanceType)).sortBy(_.instanceType)
-    val emrInstances = emrProduct.filter(i => commonProducts.contains(i.instanceType)).sortBy(_.instanceType)
+    emrInstances.flatMap { emr =>
+      ec2Map.get(emr.instanceType).map { ec2 =>
+        val totalMB = 1024.0 * ec2.memoryGiB
+        val reserved = Math.min(8192, Math.max(2048, 0.25 * totalMB))
+        val availableMemoryMB = totalMB - Math.round(reserved)
+        val instanceFamily = ec2.instanceType.split('.').headOption.getOrElse("")
 
-    (emrInstances, ec2Instances).zipped.toList.map { case (emr, ec2) =>
-
-      val totalMB = 1024.0 * ec2.memoryGiB
-      val availableMemoryMB = totalMB - Math.round(Math.min(8192, Math.max(2048, 0.25 * totalMB)))
-      val instanceFamily = ec2.instanceType.split('.')(0)
-
-      EmrInstance(
-        ec2.instanceType,
-        instanceFamily,
-        ec2.currentGeneration,
-        ec2.vCpu,
-        ec2.memoryGiB,
-        ec2.volumeType,
-        ec2.volumeNumber,
-        ec2.volumeSizeGB,
-        ec2.networkBandwidthGbps,
-        availableMemoryMB.toInt,
-        ec2.price,
-        emr.price)
-    }
+        EmrInstance(
+          instanceType = ec2.instanceType,
+          instanceFamily = instanceFamily,
+          currentGeneration = ec2.currentGeneration,
+          vCpu = ec2.vCpu,
+          memoryGiB = ec2.memoryGiB,
+          volumeType = ec2.volumeType,
+          volumeNumber = ec2.volumeNumber,
+          volumeSizeGB = ec2.volumeSizeGB,
+          networkBandwidthGbps = ec2.networkBandwidthGbps,
+          yarnMaxMemoryMB = availableMemoryMB.toInt,
+          ec2Price = ec2.price,
+          emrPrice = emr.price
+        )
+      }
+    }.sortBy(_.instanceType)
   }
 
   /**

@@ -28,7 +28,7 @@ class SparkSubmitHelperTest extends AnyFunSuiteLike {
     val submitCmd = Seq(
       "org.apache.spark.deploy.yarn.ApplicationMaster",
       "--class", "com.amazonaws.emr.SparkBenchmark",
-      "--jar", "s3://ripani.dub.tests/benchmark/jars/spark-benchmark.jar",
+      "--jar", "s3://testbucket/benchmark/jars/spark-benchmark.jar",
       "--arg", "arg1",
       "--arg", "arg2",
       "--dist-cache-conf", "__spark_conf__/__spark_dist_cache__.properties"
@@ -36,7 +36,7 @@ class SparkSubmitHelperTest extends AnyFunSuiteLike {
 
     val parsed = SparkSubmitHelper.parse(submitCmd)
 
-    assert(parsed.appScriptJarPath == "s3://ripani.dub.tests/benchmark/jars/spark-benchmark.jar")
+    assert(parsed.appScriptJarPath == "s3://testbucket/benchmark/jars/spark-benchmark.jar")
     assert(parsed.mainClass.get == "com.amazonaws.emr.SparkBenchmark")
     assert(parsed.appArguments.size == 2)
     assert(parsed.isScala)

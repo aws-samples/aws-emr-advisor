@@ -9,15 +9,15 @@ import scala.util.Try
 
 class AppSparkExecutors(val executors: Map[String, ExecutorTimeSpan], val appConfigs: AppConfigs) {
 
-  val defaultDriverCores: Int = appConfigs.driverCores
-  val defaultDriverMemory: Long = appConfigs.driverMemory
-  val defaultExecutorCores: Int = appConfigs.executorCores
-  val defaultExecutorMemory: Long = appConfigs.executorMemory
+  lazy val defaultDriverCores: Int = appConfigs.driverCores
+  lazy val defaultDriverMemory: Long = appConfigs.driverMemory
+  lazy val defaultExecutorCores: Int = appConfigs.executorCores
+  lazy val defaultExecutorMemory: Long = appConfigs.executorMemory
 
-  val executorsLaunched: Int = executors.size - 1
-  val executorsMaxRunning: Int = getMaxConcurrent
-  val executorsTotalCores: Long = executorsMaxRunning * defaultExecutorCores
-  val executorsTotalMemory: Long = executorsMaxRunning * defaultExecutorMemory
+  lazy val executorsLaunched: Int = executors.size - 1
+  lazy val executorsMaxRunning: Int = getMaxConcurrent
+  lazy val executorsTotalCores: Long = executorsMaxRunning * defaultExecutorCores
+  lazy val executorsTotalMemory: Long = executorsMaxRunning * defaultExecutorMemory
 
   @deprecated
   def getRequiredStoragePerExecutor: Long = {

@@ -3,11 +3,12 @@ package com.amazonaws.emr.spark.models.runtime
 import com.amazonaws.emr.Config
 import com.amazonaws.emr.Config.{EmrOnEc2MinStorage, EmrOnEc2ProvisioningMs}
 import com.amazonaws.emr.api.AwsCosts.EmrOnEc2Cost
-import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.api.AwsPricing.EmrInstance
 import com.amazonaws.emr.report.HtmlBase
+import com.amazonaws.emr.spark.analyzer.SimulationWithCores
 import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.EmrOnEc2Env.{getClusterClassifications, getNodeUsableMemory}
+import com.amazonaws.emr.spark.optimizer.ResourceWaste
 import com.amazonaws.emr.utils.Constants.{HtmlSvgEmrOnEc2, LinkEmrOnEc2IamRoles, LinkEmrOnEc2QuickStart}
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toMB}
 import org.apache.spark.utils.SparkSubmitHelper.SparkSubmitCommand
@@ -20,7 +21,9 @@ case class EmrOnEc2Env(
   yarnContainersPerInstance: Int,
   costs: EmrOnEc2Cost,
   driver: ResourceRequest,
-  executors: ResourceRequest
+  executors: ResourceRequest,
+  resources: ResourceWaste,
+  simulations: Option[Seq[SimulationWithCores]]
 ) extends Ordered[EmrOnEc2Env] with EmrEnvironment with HtmlBase {
 
   private val baseStorage = byteStringAsBytes(EmrOnEc2MinStorage)
@@ -96,7 +99,7 @@ case class EmrOnEc2Env(
   private def exampleSubmitJob(appInfo: AppInfo): String = {
 
     val epoch = System.currentTimeMillis()
-    val emrRelease = AwsEmr.latestRelease(awsRegion)
+    val emrRelease = appInfo.latestEmrRelease(awsRegion)
     val stepName = htmlTextRed(s"spark-test-$epoch")
     val classifications = getClusterClassifications(
       sparkRuntime, toMB(getNodeUsableMemory(coreNode))
@@ -136,6 +139,13 @@ case class EmrOnEc2Env(
        |""".stripMargin
   }
 
+  override def toString: String =
+    s"""|-----------------
+        |M: ${masterNode.instanceType} (${masterNode.vCpu} / ${masterNode.memoryGiB}GiB)
+        |C: ${coreNode.instanceType} x $coreNodeNum (${coreNode.vCpu} / ${coreNode.memoryGiB}GiB) CPI: ${yarnContainersPerInstance}
+        |Total: ${costs.total}(ec2: ${costs.hardware} emr: ${costs.emr} storage: ${costs.storage})
+        |Waste: AVG ${resources.averageWastePercent} CPU ${resources.cpuWastePercent} Mem ${resources.memoryWastePercent}
+        |-----------------""".stripMargin
 }
 
 object EmrOnEc2Env {
@@ -149,7 +159,7 @@ object EmrOnEc2Env {
   def getClusterClassifications(sparkRuntimeConfigs: SparkRuntime, nodeManagerMemoryMb: Long): String = {
     s"""[
        |${getYarnClassification(nodeManagerMemoryMb)},
-       |${sparkRuntimeConfigs.getSparkClassification}
+       |${sparkRuntimeConfigs.emrOnEc2Classification}
        |]"""
       .stripMargin
   }

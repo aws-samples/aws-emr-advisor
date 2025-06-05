@@ -9,14 +9,44 @@ import org.apache.logging.log4j.scala.Logging
 import org.apache.spark.utils.SparkSubmitHelper
 import software.amazon.awssdk.regions.Region
 
+/**
+ * AppRuntimeAnalyzer identifies the runtime deployment context of a Spark application.
+ *
+ * It attempts to classify the environment in which the application was executed as:
+ *   - EMR on EC2
+ *   - EMR on EKS
+ *   - EMR Serverless
+ *   - Unknown (NotDetectedRun)
+ *
+ * The analyzer extracts deployment metadata such as:
+ *   - Cluster ID (for EC2)
+ *   - Application ID (for Serverless)
+ *   - Spark version
+ *   - EMR release label
+ *   - AWS region
+ *
+ * It also parses the original `spark-submit` command (if available) from
+ * the system configs and attaches a parsed representation (`SparkSubmitCommand`)
+ * to the application context.
+ *
+ */
 class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
 
+  /**
+   * Detects the Spark deployment type and extracts runtime metadata.
+   *
+   * @param appContext The full application context containing system and Spark configs.
+   * @param startTime  The application start time (unused in this analyzer).
+   * @param endTime    The application end time (unused in this analyzer).
+   * @param options    Optional settings, including region override.
+   */
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
     logger.info("Analyze Deployment Runtime...")
 
     val sparkVersion = appContext.appConfigs.sparkVersion
 
+    /** Detects if the app was run on EMR on EC2 (via known system/env variables or committers). */
     def isEmrOnEc2: Boolean = {
       // In client mode we can use ENV variables available on the master to detect
       // both release and cluster id
@@ -32,12 +62,14 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       clientMode || clusterMode
     }
 
+    /** Detects if the app was run on EMR on EKS by checking config keys. */
     def isEmrOnEks: Boolean = appContext.appConfigs.sparkConfigs.exists(_._1.contains("emr-containers"))
 
+    /** Detects if the app was run on EMR Serverless by checking for relevant Spark properties. */
     def isEmrServerless: Boolean = appContext.appConfigs.sparkConfigs.exists(_._1.contains("emr-serverless"))
 
+    // Detect and construct appropriate JobRun metadata
     val jobRun: JobRun = if (isEmrOnEc2) {
-
       val clusterId = appContext.appConfigs.systemConfigs.getOrElse("EMR_CLUSTER_ID", NotAvailable)
       val releaseLabel = appContext.appConfigs.systemConfigs.get("EMR_RELEASE_LABEL")
       val region = AWSRegion.values()
@@ -48,7 +80,6 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       EmrOnEc2Run(clusterId, sparkVersion, releaseLabel, region)
 
     } else if (isEmrOnEks) {
-
       val region = AWSRegion.values()
         .map(r => r.toString).toList
         .find(r => appContext.appConfigs.sparkConfigs.values.toList.exists(p => p matches s".*$r.*"))
@@ -57,7 +88,6 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
       EmrOnEksRun(sparkVersion, None, region)
 
     } else if (isEmrServerless) {
-
       val appName = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.name", NotAvailable)
       val jobRunId = appContext.appConfigs.sparkConfigs.getOrElse("spark.app.id", NotAvailable)
       val region = appContext.appConfigs.sparkConfigs.getOrElse(
@@ -71,17 +101,14 @@ class AppRuntimeAnalyzer extends AppAnalyzer with Logging {
 
     appContext.appInfo.runtime = jobRun
 
-    // Parse Submitted application
-    val cmd = appContext.appConfigs.systemConfigs.get("sun.java.command")
-    if (cmd.nonEmpty) {
-
-      // quick fix for when lakeformation.enabled parameter is not correct in Java command
-      val cmdStr = cmd.get.replace("spark.emr-serverless.lakeformation.enabled=",
-        "spark.emr-serverless.lakeformation.enabled=false")
-
-      appContext.appInfo.sparkCmd = Some(SparkSubmitHelper.parse(cmdStr))
-
+    // Parse spark-submit command (if available)
+    val cmdOpt = appContext.appConfigs.systemConfigs.get("sun.java.command")
+    if (cmdOpt.nonEmpty) {
+      val sanitizedCmd = cmdOpt.get.replace(
+        "spark.emr-serverless.lakeformation.enabled=",
+        "spark.emr-serverless.lakeformation.enabled=false"
+      )
+      appContext.appInfo.sparkCmd = Some(SparkSubmitHelper.parse(sanitizedCmd))
     }
   }
-
 }

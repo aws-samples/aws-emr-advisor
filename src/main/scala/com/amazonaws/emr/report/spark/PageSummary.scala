@@ -97,9 +97,10 @@ class PageSummary(appInfo: AppInfo, appConfigs: AppConfigs) extends HtmlPage {
     htmlTable(
       Nil,
       List(
+        List("Spark Deploy", appConfigs.sparkConfigs.getOrElse("spark.submit.deployMode", "client")),
+        List("Spark DRA", appConfigs.sparkConfigs.getOrElse("spark.dynamicAllocation.enabled", "false")),
         List("Spark Scheduler", appConfigs.sparkConfigs.getOrElse("spark.scheduler.mode", "FIFO")),
-        List("Spark DRA Enabled", appConfigs.sparkConfigs.getOrElse("spark.dynamicAllocation.enabled", "false")),
-        List("Spark Shuffle Service Enabled", appConfigs.sparkConfigs.getOrElse("spark.shuffle.service.enabled", "false")),
+        List("Spark Shuffle Service", appConfigs.sparkConfigs.getOrElse("spark.shuffle.service.enabled", "false")),
       ), CssTableStyle)
   }
 

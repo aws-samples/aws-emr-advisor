@@ -1,7 +1,7 @@
 package com.amazonaws.emr.spark.models.timespan
 
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics
-
+import com.amazonaws.emr.utils.Formatter.printDuration
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler.TaskInfo
 
@@ -36,7 +36,12 @@ class StageTimeSpan(val stageID: Int) extends TimeSpan {
 
   def updateTasks(taskInfo: TaskInfo, taskMetrics: TaskMetrics): Unit = synchronized {
     if (taskInfo != null && taskMetrics != null) {
-      tempTaskTimes += ((taskInfo.taskId, taskMetrics.executorRunTime, taskMetrics.peakExecutionMemory))
+      val totalRunTime = taskMetrics.executorRunTime + taskMetrics.executorDeserializeTime + taskMetrics.resultSerializationTime
+      tempTaskTimes += ((
+        taskInfo.taskId,
+        totalRunTime,
+        taskMetrics.peakExecutionMemory
+        ))
       if (taskInfo.launchTime < minTaskLaunchTime) minTaskLaunchTime = taskInfo.launchTime
       if (taskInfo.finishTime > maxTaskFinishTime) maxTaskFinishTime = taskInfo.finishTime
     }
@@ -75,3 +80,12 @@ class StageTimeSpan(val stageID: Int) extends TimeSpan {
   }
 
 }
+
+case class StageSummaryMetrics(
+  id: Int,
+  numberOfTasks: Long,
+  stageAvgPeakMemory: Long,
+  stageAvgMemorySpilled: Long,
+  stageMaxPeakMemory: Long,
+  stageTotalMemorySpilled: Long
+)

@@ -3,7 +3,9 @@ package com.amazonaws.emr.spark.models.runtime
 import com.amazonaws.emr.api.AwsCosts.{EmrCosts, EmrOnEc2Cost, EmrOnEksCost, EmrServerlessCost}
 import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, DefaultCurrency, EmrInstance, VolumeType}
 import com.amazonaws.emr.report.HtmlBase
+import com.amazonaws.emr.spark.analyzer.SimulationWithCores
 import com.amazonaws.emr.spark.models.AppInfo
+import com.amazonaws.emr.spark.optimizer.ResourceWaste
 import com.amazonaws.emr.utils.Formatter.printDuration
 import software.amazon.awssdk.regions.Region
 
@@ -11,13 +13,17 @@ trait EmrEnvironment extends HtmlBase {
 
   val costs: EmrCosts
 
-  val awsRegion = Region.of(costs.region)
+  val awsRegion: Region = Region.of(costs.region)
 
   val sparkRuntime: SparkRuntime
 
   val driver: ResourceRequest
 
   val executors: ResourceRequest
+
+  val resources: ResourceWaste
+
+  val simulations: Option[Seq[SimulationWithCores]]
 
   def instances: List[String] = Nil
 
@@ -38,7 +44,7 @@ trait EmrEnvironment extends HtmlBase {
 
   def htmlCard(extended: Boolean = false, selected: Boolean = false): String = {
     s"""
-       |  <div class="card ${if (selected) "border-success" else ""}">
+       |  <div class="card h-100 ${if (selected) "border-success" else ""}">
        |    <div class="card-header">
        |      <div class="float-start p-2">$serviceIcon</div>
        |      <h5 class="card-title pt-1">$label</h5>
@@ -109,7 +115,9 @@ object Environment extends Enumeration {
     yarnContainersPerInstance = 0,
     EmrOnEc2Cost(0, 0, 0, 0),
     YarnRequest(0, 0, 0, 0),
-    YarnRequest(0, 0, 0, 0)
+    YarnRequest(0, 0, 0, 0),
+    ResourceWaste(0, 0, 0L, 0L),
+    None
   )
 
   def emptyEmrOnEks: EmrOnEksEnv = EmrOnEksEnv(
@@ -120,7 +128,9 @@ object Environment extends Enumeration {
     podsPerInstance = 0,
     EmrOnEksCost(0, 0, 0, 0),
     K8sRequest(0, 0, 0, 0),
-    K8sRequest(0, 0, 0, 0)
+    K8sRequest(0, 0, 0, 0),
+    ResourceWaste(0, 0, 0L, 0L),
+    None
   )
 
   def emptyEmrServerless: EmrServerlessEnv = EmrServerlessEnv(
@@ -132,7 +142,9 @@ object Environment extends Enumeration {
     executors = K8sRequest(0, 0, 0, 0),
     SparkRuntime.empty,
     EmrServerlessCost(0, 0, 0, 0),
-    task_cpus = 1
+    task_cpus = 1,
+    ResourceWaste(0, 0, 0L, 0L),
+    None
   )
 
   private def emptyInstance: EmrInstance = EmrInstance(

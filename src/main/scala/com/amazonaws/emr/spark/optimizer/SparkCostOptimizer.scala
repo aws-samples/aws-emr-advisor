@@ -1,325 +1,128 @@
 package com.amazonaws.emr.spark.optimizer
 
-import com.amazonaws.emr.Config._
-import com.amazonaws.emr.api.AwsCosts.{EmrCosts, EmrOnEc2Cost, EmrOnEksCost}
-import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, ComputeType, EmrInstance, VolumeType}
-import com.amazonaws.emr.api.{AwsCosts, AwsPricing}
 import com.amazonaws.emr.spark.analyzer.SimulationWithCores
-import com.amazonaws.emr.spark.models.AppContext
-import com.amazonaws.emr.spark.models.OptimalTypes.{CostOpt, OptimalType, TimeOpt}
-import com.amazonaws.emr.spark.models.runtime.EmrServerlessEnv.{findWorkerByCpuMemory, isValidConfig, normalizeSparkConfigs}
+import com.amazonaws.emr.spark.models.OptimalTypes.OptimalType
 import com.amazonaws.emr.spark.models.runtime.Environment.{EC2, EKS, EnvironmentName, SERVERLESS}
-import com.amazonaws.emr.spark.models.runtime.SparkRuntime.getMemoryWithOverhead
 import com.amazonaws.emr.spark.models.runtime._
-import com.amazonaws.emr.utils.Formatter._
+import com.amazonaws.emr.utils.Formatter.printDuration
 import org.apache.logging.log4j.scala.Logging
 
-class SparkCostOptimizer(awsRegion: String, spotDiscount: Double) extends Logging {
+/**
+ * SparkCostOptimizer evaluates Spark executor configurations in different EMR environments
+ * (EC2, EKS, Serverless) and selects the one that minimizes cost, runtime, or waste depending on the optimization goal.
+ *
+ * This optimizer:
+ *   - Builds Spark runtime configurations using simulation data
+ *   - Converts them into EMR environment models
+ *   - Scores each configuration using a weighted composite of cost, runtime, and waste
+ *
+ * Used in the cost-aware optimization strategy (`CostOpt`).
+ *
+ * @param sparkBaseOptimizer Base optimizer with access to app context and executor tuning logic
+ * @param sparkEnvOptimizer  Maps Spark configs to environment-specific EMR cluster descriptions
+ */
+class SparkCostOptimizer(
+  sparkBaseOptimizer: SparkBaseOptimizer,
+  sparkEnvOptimizer: SparkEnvOptimizer
+) extends EnvOptimizer with Logging {
 
-  // get instances with corresponding price
-  private val allInstances = AwsPricing
-    .getEmrAvailableInstances(awsRegion)
-    .filter(i => i.vCpu >= 2 && i.memoryGiB >= 8)
+  private val appContext = sparkBaseOptimizer.appContext
+  private val currentSparkRuntime = SparkRuntime.fromAppContext(appContext)
+  private val appExecutorCores = currentSparkRuntime.executorCores
+  private val appExecutorNumber = currentSparkRuntime.executorsNum
 
-  private val emrOnEksUplift = AwsPricing.getEmrContainersPrice(awsRegion)
-    .find(_.compute == ComputeType.EC2)
-    .getOrElse(throw new IllegalStateException("No EC2 compute uplift found"))
+  val sparkRuntimeBuilder = new SparkRuntimeBuilder(sparkBaseOptimizer)
 
-  private val emrServerlessPricing = AwsPricing.getEmrServerlessPrice(awsRegion)
-
-  private val ebsGbPerMonthCost = AwsPricing.getEbsServicePrice(awsRegion)
-    .find(_.volumeType == EbsDefaultStorage)
-    .map(_.price)
-    .getOrElse(throw new IllegalStateException("No EBS service price found"))
-
-  def findOptCostSparkConf(
-    appContext: AppContext,
-    simulationList: Seq[SimulationWithCores],
+  /**
+   * Recommend the best EMR environment based on the selected optimization strategy.
+   *
+   * @param simulations Sequence of simulation data (runtime per executor config)
+   * @param environment Target EMR environment (EC2, EKS, Serverless)
+   * @param optType Optimization goal (CostOpt, EfficiencyOpt, PerformanceOpt, etc.)
+   * @return The best-scoring EMR environment
+   */
+  def recommend(
+    simulations: Seq[SimulationWithCores],
     environment: EnvironmentName,
     optType: OptimalType,
-    expectedDuration: Option[Long] = None
-  ): Option[SparkRuntime] = {
+    expectedTime: Option[Long] = None
+  ): EmrEnvironment = {
 
-    val sparkRuntime = environment match {
+    val runtimeFilteredSimulations = expectedTime
+      .map(threshold => simulations.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= threshold))
+      .filter(_.nonEmpty)
+      .getOrElse(simulations)
 
-      case EC2 | EKS =>
+    val matchingSimulation = if(expectedTime.nonEmpty) {
+      runtimeFilteredSimulations
+        .find(sim => appExecutorCores == sim.coresPerExecutor)
+        .get
+    } else {
+      simulations
+        .find(sim => appExecutorCores == sim.coresPerExecutor && appExecutorNumber == sim.executorNum)
+        .get
+    }
 
-        val optimizedConfigs = expectedDuration
-          .map(t => simulationList.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t))
-          .getOrElse(simulationList)
-          .map(SparkBaseOptimizer.createEc2SparkRuntime(appContext, _))
-          .map(c => findOptEnv(c, environment, optType).get)
+    logger.debug(s"Real    : ${printDuration(appContext.appInfo.duration)}")
+    logger.debug(s"Expected: ${printDuration(matchingSimulation.appRuntimeEstimate.estimatedAppTimeMs)}")
 
-        Some(optimizedConfigs.minBy(_.costs.total).sparkRuntime)
-
+    val runtimeConfigs = environment match {
+      case EC2 | EKS => sparkRuntimeBuilder.buildEc2(currentSparkRuntime, matchingSimulation)
       case SERVERLESS =>
-
-        val optimalConfig = expectedDuration
-          .map(t => simulationList.filter(_.appRuntimeEstimate.estimatedAppTimeMs <= t))
-          .getOrElse(simulationList)
-          .flatMap(sim => SparkBaseOptimizer.createSvlSparkRuntime(appContext, sim))
-          .filter(isValidConfig)
-          .flatMap(findEmrServerlessOptimal(_, optType))
-          .minBy(_.costs.total)
-          .sparkRuntime
-
-        Some(optimalConfig)
-
-      case _ => None
-
+        val envWithCurrent = sparkRuntimeBuilder.buildServerless(currentSparkRuntime, matchingSimulation)
+        if(envWithCurrent.isEmpty) {
+          logger.warn(s"Can't use current Spark Configs for EMR Serverless")
+          sparkRuntimeBuilder.buildServerless(matchingSimulation).head
+        } else envWithCurrent.head
+      case _ => SparkRuntime.empty
     }
 
-    sparkRuntime
-  }
-
-  def findOptCostEnv(
-    sparkRuntime: SparkRuntime,
-    environment: EnvironmentName,
-    optType: OptimalType
-  ): Option[EmrEnvironment] =
-    environment match {
-      case EC2 | EKS => findOptEnv(sparkRuntime, environment, optType)
-      case SERVERLESS => findEmrServerlessOptimal(sparkRuntime, optType)
-      case _ => None
-    }
-
-  // ========================================================================
-  // EMR EC2 / EKS
-  // ========================================================================
-  private def findOptEnv(
-    sparkRuntimeConfigs: SparkRuntime,
-    deployment: EnvironmentName,
-    optType: OptimalType
-  ): Option[EmrEnvironment] = {
-
-    val driver = sparkRuntimeConfigs.getDriverContainer
-    val executors = sparkRuntimeConfigs.getExecutorContainer
-
-    // evaluate instances for spark executors
-    val workerNodes = {
-      deployment match {
-        case EC2 =>
-          filterSparkInstances(allInstances, executors, optType)
-            .map(i => evaluate(i, sparkRuntimeConfigs, executors, ebsGbPerMonthCost, EC2))
-            .filter(_.containersPerInstance >= 1)
-            .filter(s => s.totalInstances >= EmrOnEc2ClusterMinNodes)
-            .filter(_.containersPerInstance <= EmrOnEc2MaxContainersPerInstance)
-
-        case EKS =>
-          filterSparkInstances(allInstances, executors, optType)
-            .map(i => evaluate(i, sparkRuntimeConfigs, executors, ebsGbPerMonthCost, Environment.EKS))
-            .filter(_.containersPerInstance >= 1)
-            .filter(_.containersPerInstance <= EmrOnEksMaxPodsPerInstance)
-
-        case _ => Nil
-
-      }
-    }.sortBy(_.costs.total).take(200)
-
-    val workerNode: InstanceTest = workerNodes.minBy(_.costs.total)
-    val workersInstanceGen = workerNode.i.instanceFamily.split("\\D+").find(_.nonEmpty).getOrElse("0")
-
-    // evaluate instances for spark driver
-    val driverNodeTmp = {
-      deployment match {
-        case EC2 =>
-          filterSparkInstances(allInstances, driver, CostOpt)
-            .filter(_.instanceFamily.contains(workersInstanceGen))
-            .map(i => evaluate(i, sparkRuntimeConfigs, driver, ebsGbPerMonthCost, EC2))
-            .filter(_.containersPerInstance >= 1)
-        case EKS =>
-          filterSparkInstances(allInstances, driver, CostOpt)
-            .filter(_.instanceFamily.contains(workersInstanceGen))
-            .map(i => evaluate(i, sparkRuntimeConfigs, driver, ebsGbPerMonthCost, Environment.EKS))
-            .filter(_.containersPerInstance >= 1)
-        case _ => Nil
-      }
-    }.sortBy(_.costs.total).take(40)
-
-
-    val driverNode = driverNodeTmp.minBy(_.costs.total)
-
-    // return environment
-    deployment match {
-      case EC2 =>
-        Some(
-          EmrOnEc2Env(
-            driverNode.i,
-            workerNode.i,
-            workerNode.totalInstances,
-            sparkRuntimeConfigs,
-            workerNode.containersPerInstance,
-            EmrOnEc2Cost(
-              driverNode.costs.total + workerNode.costs.total,
-              driverNode.costs.emr + workerNode.costs.emr,
-              driverNode.costs.hardware + workerNode.costs.hardware,
-              driverNode.costs.storage + workerNode.costs.storage,
-              awsRegion,
-              spotDiscount
-            ),
-            driver,
-            executors
-          )
-        )
-      case EKS =>
-        Some(
-          EmrOnEksEnv(
-            driverNode.i,
-            workerNode.i,
-            workerNode.totalInstances,
-            sparkRuntimeConfigs,
-            workerNode.containersPerInstance,
-            EmrOnEksCost(
-              driverNode.costs.total + workerNode.costs.total,
-              driverNode.costs.emr + workerNode.costs.emr,
-              driverNode.costs.hardware + workerNode.costs.hardware,
-              driverNode.costs.storage + workerNode.costs.storage,
-              awsRegion,
-              spotDiscount
-            ),
-            driver,
-            executors
-          )
-        )
-    }
+    val computedEnvs = sparkEnvOptimizer.recommend(runtimeConfigs, environment, optType, simulations)
+    computedEnvs.minBy(_.costs.total)
 
   }
 
-  private def evaluate(
-    i: EmrInstance,
-    runtimeConfig: SparkRuntime,
-    request: ResourceRequest,
-    ebsGbPerMonthCost: Double,
-    deployment: EnvironmentName
-  ): InstanceTest = {
+  /** Case class for scoring components used in normalization */
+  case class EnvScoreComponents(cost: Double, runtime: Double, waste: Double)
 
-    val runtimeHrs = deployment match {
-      case EC2 => runtimeConfig.runtimeHrs(extraTimeMs = EmrOnEc2ProvisioningMs)
-      case EKS => runtimeConfig.runtimeHrs(extraTimeMs = EmrOnEksProvisioningMs)
-      case SERVERLESS => Double.MaxValue
+  /**
+   * Computes a normalized score (0-1) for each EMR environment using a weighted sum.
+   *
+   * @param envs Sequence of EMR environments to score
+   * @return Tuple of (environment, score) where lower score is better
+   */
+  def computeScores(envs: Seq[EmrEnvironment]): Seq[(EmrEnvironment, Double)] = {
+    val scores = envs.map { env =>
+      val cost = env.costs.total
+      val time = env.sparkRuntime.runtime.toDouble
+      val waste = env.resources.averageWastePercent
+      (env, EnvScoreComponents(cost, time, waste))
     }
 
-    val availableMemoryMB = deployment match {
-      case EC2 => toMB(EmrOnEc2Env.getNodeUsableMemory(i))
-      case EKS => i.memoryGiB * 1024
-      case SERVERLESS => Int.MinValue
-    }
+    val costs = scores.map(_._2.cost)
+    val runtimes = scores.map(_._2.runtime)
+    val wastes = scores.map(_._2.waste)
 
-    // add spark overhead memory
-    val containerMemory = getMemoryWithOverhead(request.memory)
+    def normalize(value: Double, min: Double, max: Double): Double =
+      if (max > min) (value - min) / (max - min) else 0.0
 
-    val containersPerInstanceByMem = availableMemoryMB / toMB(containerMemory)
-    val containersPerInstanceByCpu = i.vCpu / request.cores
-    val containersPerInstance = containersPerInstanceByMem.min(containersPerInstanceByCpu)
+    val minCost = costs.min; val maxCost = costs.max
+    val minTime = runtimes.min; val maxTime = runtimes.max
+    val minWaste = wastes.min; val maxWaste = wastes.max
 
-    val totalInstances = {
-      if (containersPerInstance >= request.count) 1
-      else roundUp(request.count.toDouble / containersPerInstance.toDouble)
-    }
+    println(s"minCost: $minCost maxCost: $maxCost")
+    println(s"minTime: $minTime maxTime: $maxTime")
+    println(s"minWaste: $minWaste maxWaste: $maxWaste")
+    
+    val weights = (0.5, 0.3, 0.2)
 
-    // compute wasted resources
-    val wastedCpu = i.vCpu - (containersPerInstance * request.cores)
-    val wastedMemory = availableMemoryMB - (containersPerInstance * containerMemory)
+    scores.map { case (env, comp) =>
+      val normCost = normalize(comp.cost, minCost, maxCost)
+      val normTime = normalize(comp.runtime, minTime, maxTime)
+      val normWaste = normalize(comp.waste, minWaste, maxWaste)
 
-    // compute costs
-    val costs = deployment match {
-      case EC2 => AwsCosts.computeEmrOnEc2Costs(runtimeHrs, i, totalInstances, containersPerInstance, request, ebsGbPerMonthCost, spotDiscount, awsRegion)
-      case EKS => AwsCosts.computeEmrOnEksCosts(runtimeHrs, i, totalInstances, containersPerInstance, request, ebsGbPerMonthCost, emrOnEksUplift, spotDiscount, awsRegion)
-      case _ => EmrOnEc2Cost(0, 0, 0, 0, awsRegion)
-    }
-    InstanceTest(i, totalInstances, containersPerInstance, costs, wastedCpu, wastedMemory)
-  }
-
-  // ========================================================================
-  // EMR Serverless
-  // ========================================================================
-  private def findEmrServerlessOptimal(
-    sparkRuntimeConfigs: SparkRuntime,
-    optType: OptimalType
-  ): Option[EmrEnvironment] = {
-
-    val driverNode = findWorkerByCpuMemory(sparkRuntimeConfigs.driverCores, sparkRuntimeConfigs.driverMemory)
-    val executorNode = findWorkerByCpuMemory(sparkRuntimeConfigs.executorCores, sparkRuntimeConfigs.executorMemory)
-    val executorsNum = sparkRuntimeConfigs.executorsNum
-
-    val freeStorage = byteStringAsBytes(EmrServerlessFreeStorageGb)
-
-    val totalCores = driverNode.cpu + (executorNode.cpu * executorsNum)
-    val totalMemory = getMemoryWithOverhead(driverNode.memory) + (getMemoryWithOverhead(executorNode.memory) * executorsNum)
-    val storagePerExecutor = sparkRuntimeConfigs.executorStorageRequired
-
-    val executorsTotalStorage = math.max(freeStorage, storagePerExecutor) * executorsNum
-    val billableStorage = math.max(0, (storagePerExecutor - freeStorage) * executorsNum)
-
-    val runtimeHrs = sparkRuntimeConfigs.runtimeHrs()
-
-    val totalCosts = Map(
-      ArchitectureType.ARM64 -> AwsCosts.computeEmrServerlessCosts(runtimeHrs, ArchitectureType.ARM64, totalCores, toGB(totalMemory), toGB(billableStorage), emrServerlessPricing, awsRegion),
-      ArchitectureType.X86_64 -> AwsCosts.computeEmrServerlessCosts(runtimeHrs, ArchitectureType.X86_64, totalCores, toGB(totalMemory), toGB(billableStorage), emrServerlessPricing, awsRegion)
-    )
-
-    val selectedArchitecture = optType match {
-      case TimeOpt => ArchitectureType.X86_64
-      case CostOpt | _ => ArchitectureType.ARM64
-    }
-
-    val selectedCost = totalCosts(selectedArchitecture)
-
-    val optEnv = EmrServerlessEnv(
-      totalCores,
-      driverNode.memory + (executorNode.memory * executorsNum),
-      executorsTotalStorage + freeStorage,
-      selectedArchitecture,
-      ContainerRequest(1, driverNode.cpu, driverNode.memory, freeStorage),
-      ContainerRequest(executorsNum, executorNode.cpu, executorNode.memory, executorsTotalStorage / executorsNum),
-      sparkRuntimeConfigs,
-      selectedCost,
-      executorNode.cpu / sparkRuntimeConfigs.executorCores
-    )
-
-    Some(optEnv)
-  }
-
-  private def filterSparkInstances(
-    instances: List[EmrInstance],
-    request: ResourceRequest,
-    optType: OptimalType
-  ): List[EmrInstance] = {
-
-    val baseFilters: EmrInstance => Boolean = instance =>
-      instance.currentGeneration &&
-        !instance.instanceFamily.contains('a') &&
-        SparkInstanceFamilies.exists(t => instance.instanceType.startsWith(t)) &&
-        instance.memoryGiB >= toGB(request.memory) &&
-        instance.vCpu >= request.cores
-
-    optType match {
-      case TimeOpt =>
-        val timeOptFilters: EmrInstance => Boolean = instance =>
-          if (request.storage > byteStringAsBytes(SparkNvmeThreshold))
-            instance.networkBandwidthGbps >= 10 &&
-              Seq(VolumeType.NVME, VolumeType.SSD).contains(instance.volumeType)
-          else
-            true
-
-        instances.filter(instance => baseFilters(instance) && timeOptFilters(instance))
-
-      case CostOpt | _ =>
-        instances.filter(baseFilters)
-    }
-
-  }
-
-  private case class InstanceTest(
-    i: EmrInstance,
-    totalInstances: Int,
-    containersPerInstance: Int,
-    costs: EmrCosts,
-    wastedCpu: Int,
-    wastedMemory: Long
-  ) {
-    override def toString: String = {
-      s"""${i.instanceType} ${costs.total}$$ count:$totalInstances cpi:$containersPerInstance wc:$wastedCpu wm:${humanReadableBytes(wastedMemory)}"""
+      val score = normCost * weights._1 + normTime * weights._2 + normWaste * weights._3
+      (env, score)
     }
   }
 

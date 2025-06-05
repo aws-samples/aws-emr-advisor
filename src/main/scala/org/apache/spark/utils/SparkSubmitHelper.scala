@@ -5,8 +5,31 @@ import com.amazonaws.emr.utils.Constants.NotAvailable
 
 import scala.annotation.tailrec
 
+/**
+ * SparkSubmitHelper provides utilities to parse raw Spark submit commands
+ * into structured representations for analysis and rendering purposes.
+ *
+ * This object is used to deconstruct a Spark command string (typically
+ * from logs or execution metadata) into a `SparkSubmitCommand`, extracting
+ * key components such as deploy mode, main class or script, configuration
+ * properties, and arguments.
+ */
 object SparkSubmitHelper extends HtmlBase {
 
+
+  /**
+   * Case class representing a parsed Spark submit command.
+   *
+   * @param original       The original raw command string.
+   * @param deployMode     Optional Spark deploy mode ("cluster" or "client").
+   * @param mainClass      Main class to run (for Scala/Java apps).
+   * @param mainFile       Path to the primary script or JAR.
+   * @param propertiesFile Optional path to a properties file.
+   * @param conf           Key-value pairs from `--conf` arguments.
+   * @param extraArgs      Other named arguments in the format `--arg value`.
+   * @param scriptArgs     Positional arguments passed to the application.
+   * @param language       Detected language ("python" or "scala").
+   */
   case class SparkSubmitCommand(
     original: String,
     deployMode: Option[String],
@@ -19,12 +42,19 @@ object SparkSubmitHelper extends HtmlBase {
     language: Option[String]
   ) {
 
+    /** Extracted main class, or NotAvailable if not provided. */
     val appMainClass: String = mainClass.getOrElse(NotAvailable)
+
+    /** Path to the main JAR or Python script, or NotAvailable if missing. */
     val appScriptJarPath: String = mainFile.getOrElse(NotAvailable)
+
+    /** Arguments passed to the application. */
     val appArguments: List[String] = scriptArgs
 
+    /** Checks if the application is a Python Spark app. */
     def isPython: Boolean = language.contains("python")
 
+    /** Checks if the application is a Scala or Java Spark app. */
     def isScala: Boolean = language.contains("scala") || language.contains("java")
 
     override def toString: String =
@@ -40,6 +70,12 @@ object SparkSubmitHelper extends HtmlBase {
          |""".stripMargin
   }
 
+  /**
+   * Parses a raw Spark submit command string into a structured SparkSubmitCommand.
+   *
+   * @param cmd Raw spark-submit command string.
+   * @return Parsed SparkSubmitCommand instance.
+   */
   def parse(cmd: String): SparkSubmitCommand = {
     val tokens = cmd.split("\\s+").toList
     val (_, deployMode, mainClass, mainFile, propsFile, conf, extraArgs, scriptArgs) = parseTokens(tokens)
@@ -47,6 +83,12 @@ object SparkSubmitHelper extends HtmlBase {
     SparkSubmitCommand(cmd, deployMode, mainClass, mainFile, propsFile, conf, extraArgs, scriptArgs, language)
   }
 
+  /**
+   * Infers the application language based on the main file extension.
+   *
+   * @param mainFile Path to the main file.
+   * @return Some("python") or Some("scala") if file extension matches, None otherwise.
+   */
   private def detectLanguage(mainFile: Option[String]): Option[String] = {
     mainFile match {
       case Some(file) if file.endsWith(".py") => Some("python")
@@ -55,6 +97,23 @@ object SparkSubmitHelper extends HtmlBase {
     }
   }
 
+  /**
+   * Recursively parses command-line tokens to extract Spark submit options.
+   *
+   * Recognizes keys such as --deploy-mode, --class, --conf, etc., and
+   * separates them from application arguments.
+   *
+   * @param tokens        Remaining tokens to process.
+   * @param deployMode    Optional deploy mode.
+   * @param mainClass     Optional main class.
+   * @param mainFile      Optional main script or JAR path.
+   * @param propsFile     Optional properties file path.
+   * @param conf          Accumulated Spark configuration options.
+   * @param extraArgs     Extra key-value arguments.
+   * @param scriptArgs    Application-specific arguments.
+   * @param seenMainFile  Whether a main file (JAR or script) has been encountered.
+   * @return Tuple with updated values after parsing.
+   */
   @tailrec
   private def parseTokens(
     tokens: List[String],

@@ -4,7 +4,7 @@ import com.amazonaws.emr.Config
 import com.amazonaws.emr.api.AwsPricing.DefaultCurrency
 import com.amazonaws.emr.report.HtmlPage
 import com.amazonaws.emr.spark.analyzer.AppRuntimeEstimate
-import com.amazonaws.emr.spark.models.OptimalTypes.OptimalType
+import com.amazonaws.emr.spark.models.OptimalTypes._
 import com.amazonaws.emr.spark.models.runtime.Environment.{emptyEmrOnEc2, emptyEmrOnEks, emptyEmrServerless}
 import com.amazonaws.emr.spark.models.runtime.{EmrEnvironment, Environment, SparkRuntime}
 import com.amazonaws.emr.spark.models.{AppInfo, AppRecommendations}
@@ -123,16 +123,51 @@ class PageRecommendations(
          | ${htmlBold(cheaper._1)}. The estimated runtime is ${printDurationStr(sparkRuntime.runtime)}, with a total cost of
          | <b>${"%.2f".format(cheaper._2)} $DefaultCurrency</b> in the ${htmlBold(awsRegion)} region.""".stripMargin
 
-    val userInfo = "For more information and examples, explore the respective Environment tabs for each deployment."
+    val userInfo =
+      "For more information and examples, explore the respective Environment tab for each deployment option."
+    val recommendationInfo = optType match {
+      case CostOpt =>
+        s"""|${htmlBold("Cost-optimized recommendations")} focus on identifying the ${htmlBold("cheapest environment")}
+            |where the original Spark job configuration can successfully run. The Spark settings used in this analysis
+            |are based on the ${htmlBold("default configuration detected from the original job")}, including driver and
+            |executor resources. These configurations are not altered unless they are incompatible with the target
+            |environment—for example, if they violate EMR Serverless worker constraints. The goal is to maintain the
+            |application's original resource profile as closely as possible while minimizing total cost, including
+            |compute, memory, and storage across EC2, EKS, or Serverless options.
+            |""".stripMargin
+      case EfficiencyOpt =>
+        s"""|${htmlBold("Efficiency-optimized recommendations")} aim to identify the
+            |${htmlBold("most resource-efficient Spark configuration")} based on actual job behavior and metrics.
+            |Unlike cost-optimized recommendations, the original Spark configurations are
+            |${htmlBold("adjusted and optimized")} to request only the minimal CPU, memory, and storage needed to run
+            |the job effectively, as inferred from Spark runtime metrics such as peak memory usage, spill volume, and
+            |result size. Once an optimal resource configuration is determined, the system evaluates all supported
+            |environments (EC2, EKS, and Serverless) and selects the one that can
+            |${htmlBold("run the job at the lowest total cost")} using that efficient setup.""".stripMargin
+      case PerformanceOpt =>
+        s"""|${htmlBold("Performance-optimized recommendations")} focus on tuning Spark resource configurations to
+           |${htmlBold("maximize runtime efficiency and speed")}, even if it means provisioning slightly more resources
+           |than strictly required. As with efficiency-optimized recommendations, the original Spark settings are
+           |${htmlBold("dynamically adjusted")} based on observed application metrics to determine the optimal CPU,
+           |memory, and storage needed.""".stripMargin
+      case UserDefinedOpt =>
+        s"""|${htmlBold("User-defined recommendations")} optimize Spark configurations to meet a
+            |${htmlBold("target runtime")} while minimizing cost. Simulations that complete within the
+            |specified duration are ${htmlBold("filtered and scored")} based on total cost.
+            |Spark settings are ${htmlBold("dynamically adjusted")} using application metrics, and the
+            |most cost-effective option is selected across supported environments (EC2, EKS, Serverless).
+            |""".stripMargin
+    }
 
     s"""
-       |<div class="card-group mt-3">
-       |  ${ec2.htmlCard(selected = ec2Selected)}
-       |  ${eks.htmlCard(selected = eksSelected)}
-       |  ${svl.htmlCard(selected = svlSelected)}
+       |<div class="row row-cols-1 row-cols-md-3 mt-3">
+       |  <div class="col">${ec2.htmlCard(selected = ec2Selected)}</div>
+       |  <div class="col">${eks.htmlCard(selected = eksSelected)}</div>
+       |  <div class="col">${svl.htmlCard(selected = svlSelected)}</div>
        |</div>
        |
        |<p class="mt-3">${htmlBoxSuccess(suggested)}</p>
+       |<p class="mt-3">${htmlBoxInfo(recommendationInfo)}</p>
        |<p class="mt-3">${htmlBoxInfo(userInfo)}</p>
        |""".stripMargin
   }
@@ -141,11 +176,13 @@ class PageRecommendations(
   private def simulations(environment: EmrEnvironment): String = {
 
     val randomStringId: String = UUID.randomUUID().toString
-
-    val simulations = appRecommendations.simulations
+    val simulations:Seq[(Int, AppRuntimeEstimate)] = environment.simulations
       .getOrElse(Seq.empty)
       .filter(_.coresPerExecutor == environment.sparkRuntime.executorCores)
       .map(s => s.executorNum -> s.appRuntimeEstimate)
+      .toMap
+      .toSeq
+
     val sortedSimulations = SortedMap(simulations: _*)
 
     val recommended = environment.sparkRuntime.executorsNum
@@ -179,7 +216,7 @@ class PageRecommendations(
     val sparkTable = htmlTable(
       List("", "Original", "Recommended"),
       List(
-        List("Application Runtime", printDurationStr(current.runtime), printDurationStr(optimal.runtime)),
+        List("Application Runtime", printDurationStr(current.runtime), printDurationStr(optimal.runtime) + htmlTextSmall(" (estimated) *")),
         List("Driver Cores", s"${current.driverCores}", s"${optimal.driverCores}"),
         List("Driver Memory", humanReadableBytes(current.driverMemory), humanReadableBytes(optimal.driverMemory)),
         List("Executor Cores", s"${current.executorCores}", s"${optimal.executorCores}"),
@@ -187,9 +224,19 @@ class PageRecommendations(
         List("Max Executors", s"${current.executorsNum}", s"${optimal.executorsNum}")
       ), s"""$CssTableStyle mb-0""")
 
+    val explain = htmlGroupList(
+      List(
+        htmlTextSmall(s"""
+           |* The estimated Spark runtime is based on your job's metrics. Failures at the job, stage, or task level may
+           |affect its accuracy. Please treat this estimate as a reference, not an absolute value, as it may lead to
+           |incorrect expectations.
+           |""".stripMargin)
+      ), "list-group-flush")
+
     s"""
        |<div class="app-recommendations spark">
        |  $sparkTable
+       |  $explain
        |</div>
        |""".stripMargin
 

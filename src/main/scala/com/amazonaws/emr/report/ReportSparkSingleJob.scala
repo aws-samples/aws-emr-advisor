@@ -91,8 +91,12 @@ class ReportSparkSingleJob(
         CostOpt, appContext.appInfo, appContext.appRecommendations
       ),
       new PageRecommendations(
-        "timeoptrecommendations", "Performance", "clock",
-        TimeOpt, appContext.appInfo, appContext.appRecommendations
+        "efficiencyptrecommendations", "Efficiency", "graph-up",
+        EfficiencyOpt, appContext.appInfo, appContext.appRecommendations
+      ),
+      new PageRecommendations(
+        "performanceoptrecommendations", "Performance", "speedometer",
+        PerformanceOpt, appContext.appInfo, appContext.appRecommendations
       ),
     )
 

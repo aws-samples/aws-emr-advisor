@@ -13,14 +13,21 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import java.io.File
 import java.time.Duration
 
+/**
+ * AwsUtils provides utility functions for interacting with AWS services,
+ * especially Amazon S3, and provides helpers methods in the AWS context.
+ */
 object AwsUtils extends Logging {
 
   /**
-   * Store a file on an Amazon S3 bucket.
+   * Uploads a local file to the specified Amazon S3 bucket and key.
    *
-   * @param bucketName name of the bucket
-   * @param objectKey  object prefix path
-   * @param objectPath file path on the local filesystem
+   * This method uses the default AWS credentials chain to authenticate
+   * and uploads the file using a synchronous S3 client.
+   *
+   * @param bucketName The name of the destination S3 bucket.
+   * @param objectKey  The key (path) under which to store the object.
+   * @param objectPath The path to the local file to upload.
    */
   def putS3Object(bucketName: String, objectKey: String, objectPath: String): Unit = {
     val credentialsProvider = DefaultCredentialsProvider.create
@@ -35,12 +42,15 @@ object AwsUtils extends Logging {
   }
 
   /**
-   * Return a Pre-Signed URL of an object stored in a S3 bucket.
+   * Generates a pre-signed URL for downloading an object from S3.
    *
-   * @param bucketName name of the bucket
-   * @param objectKey  object prefix path
-   * @param validity   validity of the url expressed in minutes
-   * @return pre-signed url string
+   * The returned URL is valid for a limited duration and allows
+   * clients to download the object without needing AWS credentials.
+   *
+   * @param bucketName Name of the S3 bucket containing the object.
+   * @param objectKey  S3 key (path) of the object.
+   * @param validity   Validity duration of the URL in minutes.
+   * @return A URL string that can be used to download the object.
    */
   def getS3ObjectPreSigned(bucketName: String, objectKey: String, validity: Int = S3PreSignedUrlValidity): String = {
     val credentialsProvider = DefaultCredentialsProvider.create
@@ -59,6 +69,27 @@ object AwsUtils extends Logging {
     }
   }
 
+  /**
+   * Checks whether valid AWS credentials are configured and accessible.
+   *
+   * This method is intended as a placeholder to also include permission checks
+   * for services such as S3, EMR, and EC2 in the future.
+   * TODO - Implement IAM checks
+   *
+   * @return True if credentials are present (validity only), false otherwise.
+   */
+  def checkCredentialsAndPermissions(): Boolean = {
+    hasValidCredentials
+  }
+
+  /**
+   * Verifies that AWS credentials are available in the default provider chain.
+   *
+   * This method is used to ensure that the environment is correctly configured
+   * for making AWS SDK calls, and it logs errors if no valid credentials are found.
+   *
+   * @return True if valid credentials are available, false otherwise.
+   */
   private def hasValidCredentials: Boolean = {
     val credentialsProviderChain: AWSCredentialsProviderChain = new DefaultAWSCredentialsProviderChain()
     try {
@@ -70,13 +101,6 @@ object AwsUtils extends Logging {
         logger.error("Error: Unable to load AWS credentials from any provider in the chain")
         false
     }
-  }
-
-  /**
-   * TODO - Verify if AWS Credentials exists and the there are all the required Service permissions
-   */
-  def checkCredentialsAndPermissions(): Boolean = {
-    hasValidCredentials
   }
 
 }

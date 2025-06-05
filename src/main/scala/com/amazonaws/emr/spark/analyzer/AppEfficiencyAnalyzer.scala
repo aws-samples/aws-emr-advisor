@@ -2,7 +2,7 @@ package com.amazonaws.emr.spark.analyzer
 
 import com.amazonaws.emr.spark.models.AppContext
 import com.amazonaws.emr.spark.models.metrics.AggTaskMetrics
-import com.amazonaws.emr.spark.models.timespan.{JobTimeSpan, StageTimeSpan}
+import com.amazonaws.emr.spark.models.timespan.{JobTimeSpan, StageSummaryMetrics, StageTimeSpan}
 import com.amazonaws.emr.spark.scheduler.JobOverlapHelper
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes}
 import org.apache.logging.log4j.scala.Logging
@@ -11,8 +11,27 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.Duration
 import scala.util.Try
 
+/**
+ * AppEfficiencyAnalyzer evaluates the computational efficiency and behavior
+ * of a Spark application by analyzing its resource usage and timing characteristics.
+ *
+ * It performs a comprehensive analysis of executor usage, driver overhead,
+ * scheduling delays, GC pressure, and task-level memory metrics to derive
+ * workload classification traits. These traits are then stored in the
+ * application context (`AppEfficiency`) for downstream tuning and recommendations.
+ *
+ */
 class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
 
+  /**
+   * Analyzes application-level efficiency using job timelines, task metrics,
+   * resource summaries, and executor behavior.
+   *
+   * @param appContext Application context containing job, stage, and executor data.
+   * @param startTime  Start time of the Spark application.
+   * @param endTime    End time of the Spark application.
+   * @param options    Optional configuration parameters (e.g., thresholds).
+   */
   override def analyze(appContext: AppContext, startTime: Long, endTime: Long, options: Map[String, String]): Unit = {
 
     logger.info("Analyze efficiency...")
@@ -165,6 +184,35 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
     logger.debug(s"(executor) isTaskMemoryHeavy  $isTaskMemoryHeavy")
 
     // ========================================================================
+    // Spark Stage metrics
+    // ========================================================================
+
+    val stageMetrics = appContext.stageMap.map { case (id, stage) =>
+      val numberOfTasks = stage.numberOfTasks
+      val stageAvgPeakMemory = stage.stageMetrics.getMetricMean(AggTaskMetrics.peakExecutionMemory).toLong
+      val stageAvgMemorySpilled = stage.stageMetrics.getMetricMean(AggTaskMetrics.memoryBytesSpilled).toLong
+      val stageMaxPeakMemory = stage.stageMetrics.getMetricMax(AggTaskMetrics.peakExecutionMemory)
+      val stageTotalMemorySpilled = stage.stageMetrics.getMetricSum(AggTaskMetrics.memoryBytesSpilled)
+      logger.debug(
+        s"stage: $id numberOfTasks=$numberOfTasks " +
+          s"stageAvgPeakMemory=${humanReadableBytes(stageAvgPeakMemory)} " +
+          s"stageAvgMemorySpilled=${humanReadableBytes(stageAvgMemorySpilled)} " +
+          s"stageMaxPeakMemory=${humanReadableBytes(stageMaxPeakMemory)} " +
+          s"stageTotalMemorySpilled=${humanReadableBytes(stageTotalMemorySpilled)}"
+      )
+      StageSummaryMetrics(
+        id = id,
+        numberOfTasks = numberOfTasks,
+        stageAvgPeakMemory = stageAvgPeakMemory,
+        stageAvgMemorySpilled = stageAvgMemorySpilled,
+        stageMaxPeakMemory = stageMaxPeakMemory,
+        stageTotalMemorySpilled = stageTotalMemorySpilled
+      )
+    }.toList
+
+    appContext.appEfficiency.stageSummaryMetrics = stageMetrics
+
+    // ========================================================================
     // Spark Task metrics
     // ========================================================================
     val taskMaxPeakMemory = Try(
@@ -195,6 +243,15 @@ class AppEfficiencyAnalyzer extends AppAnalyzer with Logging {
 
   }
 
+  /**
+   * Computes delays between job submission and stage launch, used to infer
+   * driver-side scheduling overhead.
+   *
+   * @param jobMap         Map of Job ID to JobTimeSpan
+   * @param stageMap       Map of Stage ID to StageTimeSpan
+   * @param stageIDToJobID Mapping from Stage ID to parent Job ID
+   * @return Sequence of delays (in ms) from job to stage submission
+   */
   def getDriverJobSubmissionDelays(
     jobMap: Map[Long, JobTimeSpan],
     stageMap: Map[Int, StageTimeSpan],

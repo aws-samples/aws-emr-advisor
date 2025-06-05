@@ -5,10 +5,11 @@ import com.amazonaws.emr.api.AwsCosts.EmrOnEksCost
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.api.AwsPricing.EmrInstance
 import com.amazonaws.emr.report.HtmlBase
+import com.amazonaws.emr.spark.analyzer.SimulationWithCores
 import com.amazonaws.emr.spark.models.AppInfo
+import com.amazonaws.emr.spark.optimizer.ResourceWaste
 import com.amazonaws.emr.utils.Constants._
 import com.amazonaws.emr.utils.Formatter.{byteStringAsBytes, humanReadableBytes, printDurationStr, toGB}
-import software.amazon.awssdk.regions.Region
 
 case class EmrOnEksEnv(
   driverInstance: EmrInstance,
@@ -18,7 +19,9 @@ case class EmrOnEksEnv(
   podsPerInstance: Int,
   costs: EmrOnEksCost,
   driver: ResourceRequest,
-  executors: ResourceRequest
+  executors: ResourceRequest,
+  resources: ResourceWaste,
+  simulations: Option[Seq[SimulationWithCores]]
 ) extends Ordered[EmrOnEksEnv] with EmrEnvironment with HtmlBase {
 
   private val nodeMinStorage = byteStringAsBytes(EmrOnEksNodeMinStorage)
@@ -177,7 +180,7 @@ case class EmrOnEksEnv(
   private def exampleSubmitJob(appInfo: AppInfo, conf: SparkRuntime): String = {
 
     val ecrAccountId = EmrOnEksAccountId(awsRegion.toString)
-    val emrRelease = AwsEmr.latestRelease(awsRegion)
+    val emrRelease = appInfo.latestEmrRelease(awsRegion)
     val sparkVersion = AwsEmr.getSparkVersion(emrRelease, awsRegion)
     val epoch = System.currentTimeMillis()
 
@@ -274,5 +277,13 @@ case class EmrOnEksEnv(
        |EOF
        |""".stripMargin
   }
+
+  override def toString: String =
+    s"""|-----------------
+        |M: ${driverInstance.instanceType} (${driverInstance.vCpu} / ${driverInstance.memoryGiB}GiB)
+        |C: ${executorInstance.instanceType} x $executorInstanceNum (${executorInstance.vCpu} / ${executorInstance.memoryGiB}GiB) CPI: ${podsPerInstance}
+        |Total: ${costs.total}(ec2: ${costs.hardware} emr: ${costs.emr} storage: ${costs.storage})
+        |Waste: AVG ${resources.averageWastePercent} CPU ${resources.cpuWastePercent} Mem ${resources.memoryWastePercent}
+        |-----------------""".stripMargin
 
 }

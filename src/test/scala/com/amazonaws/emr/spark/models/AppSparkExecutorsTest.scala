@@ -1,53 +1,49 @@
 package com.amazonaws.emr.spark.models
 
 import com.amazonaws.emr.spark.TestUtils
-import org.scalatest.funsuite.AnyFunSuiteLike
+import org.scalatest.flatspec.AnyFlatSpec
 
-class AppSparkExecutorsTest extends AnyFunSuiteLike with TestUtils {
+class AppSparkExecutorsTest extends AnyFlatSpec with TestUtils {
 
   private val appContext = parse("/job_spark_shell")
 
-  test("testExecutorsTotalCores") {
+  "Spark Executor Analysis" should "detect correct cores" in {
     assert(appContext.appSparkExecutors.executorsTotalCores == 4)
   }
 
-  test("testExecutorsLaunched") {
+  it should "detect total number of executors launched" in {
     assert(appContext.appSparkExecutors.executorsLaunched == 1)
   }
 
-  test("testGetMaxJvmMemoryUsed") {
+  it should "detect max amount of JVM Memory used" in {
     assert(appContext.appSparkExecutors.getMaxJvmMemoryUsed == 227435608)
   }
 
-  test("testIsComputeIntensive") {
-    assert(appContext.appSparkExecutors.isComputeIntensive)
-  }
-
-  test("testGetMaxTaskMemoryUsed") {
+  it should "detect max amount of Memory used in a task" in {
     assert(appContext.appSparkExecutors.getMaxTaskMemoryUsed == 0)
   }
 
-  test("testIsShuffleWriteUniform") {
+  it should "detect if an application is Compute intensive" in {
+    assert(appContext.appSparkExecutors.isComputeIntensive)
+  }
+
+  it should "detect if shuffle data written is uniform across executors" in {
     assert(appContext.appSparkExecutors.isShuffleWriteUniform)
   }
 
-  test("testGetTotalDiskBytesSpilled") {
+  it should "detect if the amount of memory spilled to disks" in {
     assert(appContext.appSparkExecutors.getTotalDiskBytesSpilled == 0)
   }
 
-  test("testGetRequiredStoragePerExecutor") {
+  it should "detect if the max amount of memory spilled to disks" in {
     assert(appContext.appSparkExecutors.getMaxDiskBytesSpilled == 0)
   }
 
-  test("testIsMemoryIntensive") {
-    assert(!appContext.appSparkExecutors.isMemoryIntensive)
-  }
-
-  test("testExecutorsMaxRunning") {
+  it should "detect the max amount of executors running concurrently" in {
     assert(appContext.appSparkExecutors.executorsMaxRunning == 1)
   }
 
-  test("testGetTotalTasksProcessed") {
+  it should "detect the max total number of tasks processed" in {
     assert(appContext.appSparkExecutors.getTotalTasksProcessed == 16)
   }
 

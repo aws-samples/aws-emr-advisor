@@ -6,6 +6,7 @@ It generates an HTML report, which can be saved locally or uploaded to an Amazon
 
 ## History
 
+- 2025/06 Release (v0.3.1): Improvements to recommendation logic and bug fixes
 - 2025/01 Release (v0.3.0): New Report UI and bug fix
 - 2024/08 Release (v0.2.0): Spark Event Log Analysis with EMR deployment recommendations
 
@@ -48,6 +49,7 @@ sbt clean compile assembly
 Run the application on an EMR on EC2 or Spark cluster using the `spark-submit` command. For specific examples, refer to the corresponding [documentation](./docs/spark.md) pages.
 
 - [Spark Report](./docs/spark.md)
+- [Spark Event Logs](./docs/spark_event_logs.md)
 - [WIP - Cluster Report](./docs/cluster.md)
 
 ## Example Reports

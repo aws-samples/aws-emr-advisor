@@ -6,37 +6,40 @@ import java.text.SimpleDateFormat
 import java.util.concurrent.TimeUnit._
 import java.util.{Date, Locale}
 
+/**
+ * Formatter provides a collection of utility methods for formatting
+ * time durations, byte sizes, and numeric values into human-readable
+ * or Spark-compatible forms.
+ *
+ * This object is commonly used throughout Spark EMR reporting and optimization
+ * tools to convert raw data (e.g., milliseconds, bytes, command-line args)
+ * into consistent, interpretable formats for display and configuration.
+ */
 object Formatter {
 
   private val DEFAULT_DATE = new SimpleDateFormat("dd/MM/yyyy")
   private val DEFAULT_TIME = new SimpleDateFormat("HH:mm:ss")
 
-  /**
-   * A formatted date as string
-   *
-   * @param time timestamp in ms
-   */
+  /** Returns a formatted date string from a millisecond timestamp (e.g., "27/05/2025"). */
   def printDate(time: Long): String = DEFAULT_DATE.format(new Date(time))
 
-  /**
-   * A formatted date time as string
-   *
-   * @param time timestamp in ms
-   */
+  /** Returns a formatted time string from a millisecond timestamp (e.g., "13:45:02"). */
   def printTime(time: Long): String = DEFAULT_TIME.format(new Date(time))
 
   /**
-   * Convert a passed byte string (e.g. 50b, 100k, or 250m) to bytes for
-   * internal use.
+   * Parses a size string (e.g., "250m", "1g") and returns the size in bytes.
+   * Defaults to bytes if no suffix is provided.
    *
-   * If no suffix is provided, the passed number is assumed to be in bytes.
+   * @param str Human-readable size string.
+   * @return Size in bytes.
    */
   def byteStringAsBytes(str: String): Long = JavaUtils.byteStringAsBytes(str)
 
   /**
-   * Convert bytes to a human readable string (e.g 10TB, 2GB)
+   * Converts a byte count into a human-readable string (e.g., "2.3 GB").
    *
-   * @param size size in bytes
+   * @param size Size in bytes.
+   * @return Formatted string with appropriate unit (KB, MB, GB, TB).
    */
   def humanReadableBytes(size: Long): String = {
     val TB = 1L << 40
@@ -58,6 +61,7 @@ object Formatter {
     "%.1f %s".formatLocal(Locale.US, value, unit)
   }
 
+  /** Converts milliseconds to whole days. */
   def toDays(millis: Long): Int = {
     val seconds = millis / 1000F
     val minutes = seconds / 60F
@@ -66,9 +70,9 @@ object Formatter {
   }
 
   /**
-   * Print time as duration string (e.g 01h 02m 03s)
+   * Formats a duration from milliseconds into `HHh MMm SSs` format.
    *
-   * @param millis time expressed in milli-seconds
+   * @param millis Duration in milliseconds.
    */
   def printDuration(millis: Long): String = {
     val hours = if (MILLISECONDS.toHours(millis) > 0) f"${MILLISECONDS.toHours(millis)}%02dh" else ""
@@ -78,6 +82,12 @@ object Formatter {
     s"""$hours $minutes $seconds"""
   }
 
+  /**
+   * Formats a duration from milliseconds into a natural language string.
+   *
+   * @param millis Duration in milliseconds.
+   * @return e.g., "2 hours 5 minutes and 30 seconds"
+   */
   def printDurationStr(millis: Long): String = {
     val hours = if (MILLISECONDS.toHours(millis) > 0) s"${MILLISECONDS.toHours(millis)} hours" else ""
     val mins = MILLISECONDS.toMinutes(millis) - HOURS.toMinutes(MILLISECONDS.toHours(millis))
@@ -86,10 +96,17 @@ object Formatter {
     s"""$hours $minutes $seconds"""
   }
 
+  /** Rounds a floating point number up to the nearest integer. */
   def roundUp(d: Double): Int = math.ceil(d).toInt
 
+  /** Formats a number with locale-specific digit grouping (e.g., 1,000,000). */
   def printNumber(number: Number): String = java.text.NumberFormat.getIntegerInstance.format(number)
 
+  /**
+   * Formats a duration (in ms) into HHh MMm (used in summaries).
+   *
+   * @param millis Time in milliseconds.
+   */
   def pcm(millis: Long): String = {
     val millisForMinutes = millis % (60 * 60 * 1000)
 
@@ -98,6 +115,12 @@ object Formatter {
       MILLISECONDS.toMinutes(millisForMinutes))
   }
 
+  /**
+   * Formats a time value in nanoseconds to a human-readable duration string.
+   *
+   * @param ns Time in nanoseconds.
+   * @return Formatted string (e.g., "12.0 ms", "1.5 s").
+   */
   def formatNanoSeconds(ns: Long): String = {
     val MS = 1000000L
     val SEC = 1000 * MS
@@ -118,8 +141,10 @@ object Formatter {
     "%.1f %s".formatLocal(Locale.US, value, unit)
   }
 
+  /** Formats a time value in milliseconds using the nanosecond formatter. */
   def formatMilliSeconds(ms: Long): String = formatNanoSeconds(ms * 1000000)
 
+  /** Converts a size in bytes to gigabytes (rounded down). */
   def toGB(bytes: Long): Int = {
     val kilobyte = 1024
     val megabyte = kilobyte * 1024
@@ -127,12 +152,14 @@ object Formatter {
     (bytes / gigabyte).toInt
   }
 
+  /** Converts a size in bytes to megabytes (rounded down). */
   def toMB(bytes: Long): Int = {
     val kilobyte = 1024
     val megabyte = kilobyte * 1024
     (bytes / megabyte).toInt
   }
 
+  /** Converts a size in bytes to gigabytes (as double). */
   def asGB(bytes: Long): Double = {
     val kilobyte = 1024
     val megabyte = kilobyte * 1024
@@ -140,6 +167,13 @@ object Formatter {
     bytes.toDouble / gigabyte
   }
 
+  /**
+   * Normalizes a command-line parameter name by removing dashes.
+   * Useful for converting `--driver-memory` into `drivermemory`.
+   *
+   * @param name Original CLI parameter name.
+   * @return Normalized identifier-safe name.
+   */
   def normalizeName(name: String): String = {
     name.replaceAll("-", "")
   }

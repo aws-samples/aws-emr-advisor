@@ -28,13 +28,16 @@ object Config {
 
   val EbsDefaultStorage = "gp3"
 
-  val EmrOnEc2ClusterMinNodes = 1
+  val EmrOnEc2ClusterMinNodes = 2
   val EmrOnEc2MinStorage = "32g"
-  val EmrOnEc2MaxContainersPerInstance = 4
+
+  // For Spot instances we want a reduced number of containers running
+  // while with On Demand we can be more relaxed
+  val EmrOnEc2MaxContainersPerInstanceWithSpot = 4
+  val EmrOnEc2MaxContainersPerInstanceWithOnDemand = 8
   val EmrOnEc2ReservedOsMemoryGb = "4g"
 
   val EmrOnEksNodeMinStorage = "10g"
-  val EmrOnEksMaxPodsPerInstance = 4
   val EmrOnEksAccountId = Map(
     "ap-northeast-1" -> "059004520145",
     "ap-northeast-2" -> "996579266876",
@@ -61,20 +64,24 @@ object Config {
   val ComputeIntensiveMaxMemory = "2g"
   val MemoryIntensiveMinMemory = "8g"
 
-  val EmrReleaseFilter = List("emr-7.", "emr-8.")
+  val EmrReleaseFilter: List[String] = List("emr-7.", "emr-8.")
 
   val SparkMaxDriverCores = 4
   val SparkMaxDriverMemory = "64gb"
 
-  val SparkMaxExecutorCores = 16
+  val SparkInstanceFamilies: Seq[String] = Seq("c", "d", "i", "m", "r")
+  val SparkStageMaxMemorySpill = "500gb"
 
-  val SparkInstanceFamilies: Seq[String] = List("m", "c", "r", "d")
-  val SparkNvmeThreshold = "100g"
+  val SparkExecutorCoresBalanced: Seq[Int] = Seq(4, 5, 6, 7, 8)
+  val SparkExecutorCoresCpuIntensive: Seq[Int] = Seq(8, 10, 11, 12, 13, 14, 15, 16)
+  val SparkExecutorCoresMemoryIntensive: Seq[Int] = Seq(1, 2, 3, 4)
 
   // Executors Simulations
 
   // time reduction in percentage
-  val ExecutorsMaxDropLoss: Double = 5.0
+  val ExecutorsMaxDropLossEfficiency: Double = 5.0
+  val ExecutorsMaxDropLossPerformance: Double = 3.0
+
   // Maximum number of simulations for executors
   val ExecutorsMaxTestsCount: Int = 500
   val ExecutorsMaxVisibleTestsCount = 20

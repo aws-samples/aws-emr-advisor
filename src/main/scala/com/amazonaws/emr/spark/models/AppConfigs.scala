@@ -5,6 +5,21 @@ import com.amazonaws.emr.utils.Formatter
 
 import scala.collection.mutable
 
+/**
+ * AppConfigs stores categorized configuration values extracted from a Spark event logs.
+ *
+ * It separates and maintains the following types of configurations:
+ *   - `sparkConfigs`: All `spark.*` properties (e.g., memory, cores, scheduling)
+ *   - `javaConfigs`: Java system properties (e.g., JVM args, GC options)
+ *   - `hadoopConfigs`: Hadoop-related properties (e.g., `fs.s3a.*`, `mapreduce.*`)
+ *   - `systemConfigs`: Environment variables or low-level system flags (e.g., classpath, `sun.java.command`)
+ *
+ * This class also exposes convenience accessors for:
+ *   - Driver and executor cores
+ *   - Driver and executor memory (converted from strings like "4g" to bytes)
+ *   - Spark version (if known, else `"n/a"`)
+ *
+ */
 class AppConfigs {
 
   var sparkVersion: String = NotAvailable
@@ -13,18 +28,6 @@ class AppConfigs {
   val sparkConfigs = new mutable.HashMap[String, String]()
   val hadoopConfigs = new mutable.HashMap[String, String]()
   val systemConfigs = new mutable.HashMap[String, String]()
-
-  val defaultSparkMemoryStorageFraction: Float = sparkConfigs
-    .getOrElse("spark.memory.storageFraction", "0.5")
-    .toFloat
-
-  val defaultSparkMemoryFraction: Float = sparkConfigs
-    .getOrElse("spark.memory.fraction", "0.6")
-    .toFloat
-
-  val defaultYarnOverheadFactor: Float = sparkConfigs
-    .getOrElse("spark.executor.memoryOverheadFactor", "0.1")
-    .toFloat
 
   def driverCores: Int = sparkConfigs.getOrElse("spark.driver.cores", "1").toInt
 

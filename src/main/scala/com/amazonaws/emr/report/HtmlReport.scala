@@ -103,6 +103,10 @@ trait HtmlReport extends HtmlBase {
        |    height: 1rem;
        |  }
        |
+       |  .card.border-success {
+       |    border-width: 2px;
+       |  }
+       |
        |  /* Sidebar */
        |  @media (min-width: 768px) {
        |    .sidebar .offcanvas-lg {
@@ -245,7 +249,7 @@ trait HtmlReport extends HtmlBase {
   def body(): String = {
     s"""
        |<!-- Body -->
-       |<body>
+       |<body class="mx-auto" style="max-width: 2560px;">
        |  ${header()}
        |  ${content()}
        |  ${scripts()}
@@ -282,7 +286,7 @@ trait HtmlReport extends HtmlBase {
     s"""
        |<!-- Header -->
        |<header class="navbar sticky-top bg-dark flex-md-nowrap p-0 shadow" data-bs-theme="dark">
-       |  <a class="navbar-brand col-md-3 col-lg-1 me-0 p-1 fs-6" href="#">
+       |  <a class="navbar-brand col-md-2 me-0 p-1 fs-6" href="#">
        |    <img src="data:image/png;base64,$imgBase64" width="40" height="40" class="float-start">
        |    <div class="pt-2">$AppName</div>
        |  </a>
@@ -334,7 +338,7 @@ trait HtmlReport extends HtmlBase {
        |  <!-- Content -->
        |  <div class="container-fluid">
        |    <div class="row">
-       |      <div class="sidebar border border-right col-md-3 col-lg-1 p-0 bg-body-tertiary">
+       |      <div class="sidebar border border-right col-md-2 p-0 bg-body-tertiary">
        |        <div class="offcanvas-md offcanvas-end bg-body-tertiary" tabindex="-1"
        |             id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
        |          <div class="offcanvas-header">
@@ -351,7 +355,7 @@ trait HtmlReport extends HtmlBase {
        |        </div>
        |      </div>
        |
-       |      <main class="col-md-9 ms-sm-auto col-lg-11 px-md-4">
+       |      <main class="col-md-10 ms-sm-auto px-md-4">
        |        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
        |          <div class="tab-content w-100" id="pills-tabContent">
        |            ${pages.map(htmlPage).mkString}

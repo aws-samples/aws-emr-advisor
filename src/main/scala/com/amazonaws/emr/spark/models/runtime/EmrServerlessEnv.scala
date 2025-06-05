@@ -5,8 +5,10 @@ import com.amazonaws.emr.api.AwsCosts.EmrServerlessCost
 import com.amazonaws.emr.api.AwsEmr
 import com.amazonaws.emr.api.AwsPricing.{ArchitectureType, DefaultCurrency}
 import com.amazonaws.emr.report.HtmlBase
+import com.amazonaws.emr.spark.analyzer.SimulationWithCores
 import com.amazonaws.emr.spark.models.AppInfo
 import com.amazonaws.emr.spark.models.runtime.SparkRuntime.getMemoryWithOverhead
+import com.amazonaws.emr.spark.optimizer.ResourceWaste
 import com.amazonaws.emr.utils.Constants.{HtmlSvgEmrServerless, LinkEmrServerlessArchDoc, LinkEmrServerlessJobRoleDoc, LinkEmrServerlessQuickStart}
 import com.amazonaws.emr.utils.Formatter._
 
@@ -23,7 +25,9 @@ case class EmrServerlessEnv(
   costs: EmrServerlessCost,
   // Due to Serverless work node size limit (https://docs.aws.amazon.com/emr/latest/EMR-Serverless-UserGuide/app-behavior.html#worker-configs),
   // we may need to use bigger workers for higher memory, in this case spark.task.cpus can larger than 1
-  task_cpus: Int = 1
+  task_cpus: Int = 1,
+  resources: ResourceWaste,
+  simulations: Option[Seq[SimulationWithCores]]
 ) extends EmrEnvironment with HtmlBase {
 
   val freeStorage: Long = byteStringAsBytes(EmrServerlessFreeStorageGb)
@@ -74,16 +78,16 @@ case class EmrServerlessEnv(
     s"""1. (Optional) ${htmlLink("Create an IAM Job Role", LinkEmrServerlessJobRoleDoc)}
        |<br/><br/>
        |2. Create an Emr Serverless Application using the latest EMR release to submit your Spark job
-       |${htmlCodeBlock(exampleRequirements, "bash")}
+       |${htmlCodeBlock(exampleRequirements(appInfo), "bash")}
        |3. Review the parameters and submit the application
        |${htmlCodeBlock(exampleSubmitJob(appInfo, sparkRuntime), "bash")}
        |<p>For additional details, see ${htmlLink("Getting started with Amazon EMR Serverless", LinkEmrServerlessQuickStart)}
        |in the AWS Documentation.</p>""".stripMargin
   }
 
-  private def exampleRequirements: String = {
+  private def exampleRequirements(appInfo: AppInfo): String = {
     val epoch = System.currentTimeMillis()
-    val latestRelease = AwsEmr.latestRelease(awsRegion)
+    val latestRelease = appInfo.latestEmrRelease(awsRegion)
     val totalMemoryWithOverhead = {
       getMemoryWithOverhead(driver.memory, 0.15) + getMemoryWithOverhead(executors.memory, 0.15) * executors.count
     }
@@ -121,7 +125,7 @@ case class EmrServerlessEnv(
        |    --job-driver '{
        |      "sparkSubmit": {
        |        "entryPoint": "${htmlTextRed(sparkCmd.appScriptJarPath)}",$arguments
-       |        "sparkSubmitParameters": "$classParam${conf.sparkMainConfString} --conf spark.emr-serverless.executor.disk=$executorStorageStr"
+       |        "sparkSubmitParameters": "$classParam${conf.configurationStr} --conf spark.emr-serverless.executor.disk=$executorStorageStr"
        |      }
        |    }' \\
        |    --configuration-overrides '{
@@ -137,6 +141,12 @@ case class EmrServerlessEnv(
        |""".stripMargin
   }
 
+  override def toString: String =
+    s"""|-----------------
+        |Total: ${costs.total}(ec2: ${costs.hardware} emr: ${costs.emr} storage: ${costs.storage})
+        |Waste: AVG ${resources.averageWastePercent} CPU ${resources.cpuWastePercent} Mem ${resources.memoryWastePercent}
+        |-----------------""".stripMargin
+
 }
 
 object EmrServerlessEnv {
@@ -151,20 +161,57 @@ object EmrServerlessEnv {
     WorkerNodeSpec(16, 32, 120, 8, 200)
   )
 
-  def isValidConfig(sparkRuntime: SparkRuntime): Boolean =
-    WorkerSupportedConfig.exists(spec =>
-      sparkRuntime.executorCores == spec.cpu &&
-        sparkRuntime.executorMemory <= byteStringAsBytes(s"${spec.maxMemoryGB}g")
-    )
+  /**
+   * Validates whether a given SparkRuntime configuration complies with EMR Serverless worker constraints.
+   *
+   * EMR Serverless supports a fixed set of worker configurations, each defined by a specific number of vCPUs
+   * and a valid memory range with specific increments. This method checks if both the driver and executor
+   * resource configurations in the SparkRuntime match any of the supported worker specifications.
+   *
+   * Validation criteria:
+   *   - CPU cores must match one of the supported WorkerNodeSpec configurations.
+   *   - Memory must fall within the allowed range [minMemoryGB, maxMemoryGB] for the given CPU tier.
+   *   - Memory must be a multiple of the memory increment defined for that CPU tier.
+   *
+   * @param runtime The SparkRuntime instance to validate.
+   * @return true if both driver and executor configurations are valid for EMR Serverless; false otherwise.
+   */
+  def isValidEmrServerlessRuntime(runtime: SparkRuntime): Boolean = {
+    def isValidWorker(cpu: Int, memory: Long): Boolean = {
+      WorkerSupportedConfig.exists { spec =>
+        spec.cpu == cpu &&
+          asGB(memory) >= spec.minMemoryGB &&
+          asGB(memory) <= spec.maxMemoryGB &&
+          asGB(memory) % spec.memoryIncrementGB == 0
+      }
+    }
 
-  def normalizeSparkConfigs(sparkRuntime: SparkRuntime): SparkRuntime = {
+    val driverValid = isValidWorker(runtime.driverCores, runtime.driverMemory)
+    val executorValid = isValidWorker(runtime.executorCores, runtime.executorMemory)
 
-    println(sparkRuntime)
+    driverValid && executorValid
+  }
 
-    val normalizedDriver = findWorkerByCpuMemory(sparkRuntime.driverCores, sparkRuntime.driverMemory)
-    val normalizedExecutor = findWorkerByCpuMemory(sparkRuntime.executorCores, sparkRuntime.executorMemory)
+  /**
+   * Normalizes a SparkRuntime configuration to ensure it is compatible with EMR Serverless.
+   *
+   * EMR Serverless enforces constraints on worker node configurations—each valid configuration specifies a fixed
+   * number of vCPUs and a bounded, incremented memory range. This method adjusts the driver and executor resource
+   * configurations to the nearest valid EMR Serverless-supported worker configuration.
+   *
+   * Adjustments include:
+   *   - Aligning CPU cores to a supported tier.
+   *   - Clamping memory to the nearest allowed range for the selected core tier.
+   *   - Rounding memory to a valid increment within the bounds.
+   *
+   * @param runtime The original (potentially invalid) SparkRuntime configuration.
+   * @return A new SparkRuntime instance with driver and executor configurations adjusted for EMR Serverless.
+   */
+  def normalizeEmrServerlessRuntime(runtime: SparkRuntime): SparkRuntime = {
+    val normalizedDriver: WorkerNode = adjustToNearestValidWorkerSpec(runtime.driverCores, runtime.driverMemory)
+    val normalizedExecutor: WorkerNode = adjustToNearestValidWorkerSpec(runtime.executorCores, runtime.executorMemory)
 
-    sparkRuntime.copy(
+    runtime.copy(
       driverCores = normalizedDriver.cpu,
       driverMemory = normalizedDriver.memory,
       executorCores = normalizedExecutor.cpu,
@@ -172,49 +219,60 @@ object EmrServerlessEnv {
     )
   }
 
-  def findWorkerByCpuMemory(cores: Int, memory: Long): WorkerNode = {
+  /**
+   * Adjusts a requested (CPU, memory) configuration to the closest valid EMR Serverless worker spec.
+   *
+   * EMR Serverless supports discrete worker sizes defined by:
+   *   - Fixed CPU core count
+   *   - Min and max memory (in GB)
+   *   - Memory increments (e.g., must be multiple of 1, 4, 8 GB etc.)
+   *
+   * If no exact CPU match is found, it selects the next-highest tier and chooses the memory size
+   * within that tier that most closely approximates the requested memory (respecting increment and bounds).
+   *
+   * @param requestedCpu Requested number of vCPUs
+   * @param requestedMemoryBytes Requested memory in bytes
+   * @param supportedConfigs List of valid worker specs (defaults to EMR Serverless supported set)
+   * @return WorkerNode that conforms to a supported worker spec
+   */
+  def adjustToNearestValidWorkerSpec(
+    requestedCpu: Int,
+    requestedMemoryBytes: Long,
+    supportedConfigs: List[WorkerNodeSpec] = WorkerSupportedConfig
+  ): WorkerNode = {
 
-    // Determine the appropriate CPU configuration
-    val cpuReq = cores match {
-      case _ if cores >= WorkerSupportedConfig.last.cpu => WorkerSupportedConfig.last.cpu
-      case _ if cores <= WorkerSupportedConfig.head.cpu => WorkerSupportedConfig.head.cpu
-      case _ => cores
+    val requestedMemoryGB = asGB(requestedMemoryBytes).toInt
+
+    // Try exact CPU match first
+    supportedConfigs.find(_.cpu == requestedCpu) match {
+      case Some(spec) =>
+        val adjustedMem = normalizeMemory(requestedMemoryGB, spec)
+        WorkerNode(spec.cpu, byteStringAsBytes(s"${adjustedMem}g"), 0L)
+
+      case None =>
+        // Fall back to higher CPU tier and find closest memory fit
+        val candidates = supportedConfigs.filter(_.cpu >= requestedCpu)
+        val bestFit = candidates.minBy { spec =>
+          val mem = normalizeMemory(requestedMemoryGB, spec)
+          math.abs(mem - requestedMemoryGB)
+        }
+        val adjustedMem = normalizeMemory(requestedMemoryGB, bestFit)
+        WorkerNode(bestFit.cpu, byteStringAsBytes(s"${adjustedMem}g"), 0L)
     }
+  }
 
-    // Convert memory to GB and determine the appropriate memory configuration
-    val memoryGb = asGB(memory).toInt
-    val memoryGbReq = memoryGb match {
-      case _ if memoryGb >= WorkerSupportedConfig.last.maxMemoryGB => WorkerSupportedConfig.last.maxMemoryGB
-      case _ if memoryGb <= WorkerSupportedConfig.head.minMemoryGB => WorkerSupportedConfig.head.minMemoryGB
-      case _ => memoryGb
-    }
+  /**
+   * Rounds a requested memory value to the nearest valid memory increment within the spec's bounds.
+   */
+  private def normalizeMemory(requestedGB: Int, spec: WorkerNodeSpec): Int = {
+    val min = spec.minMemoryGB
+    val max = spec.maxMemoryGB
+    val inc = spec.memoryIncrementGB
 
-    // Filter configurations based on memory and CPU requirements
-    val validConfigs = WorkerSupportedConfig.filter(cfg =>
-      cfg.cpu == cpuReq && memoryGbReq >= cfg.minMemoryGB && memoryGbReq <= cfg.maxMemoryGB
-    )
+    val clamped = requestedGB.max(min).min(max)
 
-    val validCpuConfigs = WorkerSupportedConfig.filter(cfg =>
-      cfg.cpu == cpuReq && memoryGbReq <= cfg.maxMemoryGB
-    )
-
-    val validMemConfigs = WorkerSupportedConfig.filter(cfg =>
-      memoryGbReq <= cfg.maxMemoryGB
-    )
-
-    // Select the appropriate WorkerNode based on the valid configurations
-    validConfigs.headOption
-      .map(cfg => WorkerNode(cfg.cpu, byteStringAsBytes(s"${memoryGbReq}g"), 0L))
-      .orElse(validCpuConfigs.headOption.map(cfg => {
-        val adjustedMemory = math.max(memoryGbReq, cfg.minMemoryGB)
-        WorkerNode(cfg.cpu, byteStringAsBytes(s"${adjustedMemory}g"), 0L)
-      }))
-      .orElse(validMemConfigs.headOption.map(cfg =>
-        WorkerNode(cfg.cpu, byteStringAsBytes(s"${memoryGbReq}g"), 0L)
-      ))
-      .getOrElse(
-        WorkerNode(WorkerSupportedConfig.last.cpu, byteStringAsBytes(s"${WorkerSupportedConfig.last.maxMemoryGB}g"), 0L)
-      )
+    val adjusted = ((clamped - min + inc / 2) / inc) * inc + min
+    adjusted.min(max)
   }
 
 }

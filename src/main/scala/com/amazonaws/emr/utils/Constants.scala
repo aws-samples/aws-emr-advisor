@@ -57,12 +57,6 @@ object Constants {
   val SparkAppOptParams = List(ParamBucket, ParamDuration, ParamExecutors, ParamRegion, ParamSpot)
   val SparkAppParams = (ParamJar :: SparkAppOptParams) :+ ParamLogs
 
-  val SparkConfigurationWarning =
-    s"""Please note that by default the tool try to find an "acceptable" number of Spark executors trying not to
-       |over-subscribe hardware resources, so the estimated runtime might not always be better than your current one.
-       |If you want to tune your application to achieve a specific runtime, specify <bold>${ParamDuration.option}</bold>
-       | while launching the application.""".stripMargin
-
   // SVG Icons for services
   def HtmlSvgEmrOnEc2: String = {
     val randomStringId: String = UUID.randomUUID().toString
